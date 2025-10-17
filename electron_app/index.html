@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Twitch Chat Reader - Bot IA v3</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-content">
+        <div class="logo">
+          <span class="logo-icon">🎮</span>
+          <h1>Twitch Chat Reader</h1>
+        </div>
+        <div class="status-indicator" id="status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-text">Desconectado</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Control Panel -->
+      <section class="control-panel">
+        <div class="panel-card">
+          <h2>⚙️ Panel de Control</h2>
+          
+          <div class="input-group">
+            <label for="channel-input">Canal de Twitch</label>
+            <input 
+              type="text" 
+              id="channel-input" 
+              placeholder="Ej: auronplay, ibai, elrubius..."
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="input-group">
+            <label for="token-input">
+              Token OAuth 
+              <span style="color: #ff4444; font-weight: bold;">*REQUERIDO</span>
+            </label>
+            <input 
+              type="password" 
+              id="token-input" 
+              placeholder="oauth:xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              autocomplete="off"
+              required
+            />
+            <small class="input-help">
+              ⚠️ El token es obligatorio para usar el bot. 
+              <a href="https://twitchtokengenerator.com/" target="_blank" style="font-weight: bold;">Obtener token aquí</a>
+            </small>
+          </div>
+
+          <div class="button-group">
+            <button id="start-btn" class="btn btn-start">
+              <span class="btn-icon">▶️</span>
+              Iniciar Bot
+            </button>
+            <button id="stop-btn" class="btn btn-stop" disabled>
+              <span class="btn-icon">⏹️</span>
+              Detener Bot
+            </button>
+          </div>
+
+          <div class="info-box">
+            <p><strong>ℹ️ Información:</strong></p>
+            <ul>
+              <li>🔑 Token OAuth es OBLIGATORIO para usar el bot</li>
+              <li>📺 El canal debe estar EN VIVO para recibir mensajes</li>
+              <li>✅ Con token: Leer mensajes, enviar comandos, estadísticas</li>
+              <li>🔗 Obtener token en: <a href="https://twitchtokengenerator.com/" target="_blank">twitchtokengenerator.com</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Estadísticas -->
+        <div class="stats-card">
+          <h3>📊 Estadísticas</h3>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-label">Mensajes</span>
+              <span class="stat-value" id="msg-count">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Usuarios</span>
+              <span class="stat-value" id="user-count">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Comandos</span>
+              <span class="stat-value" id="cmd-count">0</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chat Display -->
+      <section class="chat-section">
+        <div class="chat-container">
+          <div class="chat-header">
+            <h2>💬 Chat en Vivo</h2>
+            <button id="clear-chat" class="btn-icon-only" title="Limpiar chat">
+              🗑️
+            </button>
+          </div>
+          <div id="chat-display" class="chat-messages">
+            <div class="welcome-message">
+              <div class="welcome-icon">🚀</div>
+              <h3>¡Bienvenido!</h3>
+              <p>Ingresa un canal de Twitch y presiona "Iniciar Bot" para comenzar a leer mensajes</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logs del Sistema -->
+        <div class="logs-container">
+          <div class="logs-header">
+            <h3>📋 Logs del Sistema</h3>
+            <button id="clear-logs" class="btn-icon-only" title="Limpiar logs">
+              🗑️
+            </button>
+          </div>
+          <div id="system-logs" class="logs-content">
+            <div class="log-entry log-system">
+              <span class="log-time">[${new Date().toLocaleTimeString()}]</span>
+              <span class="log-message">Sistema iniciado y listo</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Bot IA v3 - Lector de Chat de Twitch | Electron + Python</p>
+    </footer>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
+

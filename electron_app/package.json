@@ -1,0 +1,17 @@
+{
+  "name": "twitch-bot-reader",
+  "version": "1.0.0",
+  "description": "Lector de Chat de Twitch con Interfaz Electron",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": ["twitch", "chat", "bot", "electron"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^38.2.2"
+  }
+}
+

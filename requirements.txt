@@ -1,0 +1,8 @@
+# Dependencias para el lector de chat de Twitch
+
+# Versión simple (twitch_chat_reader.py) - No requiere dependencias externas
+# Solo usa la librería estándar de Python
+
+# Versión avanzada (twitch_chat_advanced.py)
+twitchio>=2.9.0
+
