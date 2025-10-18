@@ -6,3 +6,12 @@
 # Versión avanzada (twitch_chat_advanced.py)
 twitchio>=2.9.0
 
+# API de Google Gemini para IA
+google-genai>=0.2.0
+
+# TTS con ElevenLabs (via requests)
+pygame>=2.5.0
+requests>=2.28.0
+sounddevice>=0.4.6
+pydub>=0.25.1
+

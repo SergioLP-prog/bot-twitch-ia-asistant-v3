@@ -15,15 +15,22 @@
           <span class="logo-icon">🎮</span>
           <h1>Twitch Chat Reader</h1>
         </div>
-        <div class="status-indicator" id="status-indicator">
-          <span class="status-dot"></span>
-          <span class="status-text">Desconectado</span>
+        <div class="header-actions">
+          <button id="settings-btn" class="icon-btn" title="Configuracion">⚙️</button>
+          <div class="status-indicator" id="status-indicator">
+            <span class="status-dot"></span>
+            <span class="status-text">Desconectado</span>
+          </div>
         </div>
       </div>
     </header>
 
     <!-- Main Content -->
     <main class="main-content">
+      
+      <!-- Vista Principal -->
+      <div id="main-view" class="view active">
+      
       <!-- Control Panel -->
       <section class="control-panel">
         <div class="panel-card">
@@ -52,8 +59,8 @@
               required
             />
             <small class="input-help">
-              ⚠️ El token es obligatorio para usar el bot. 
-              <a href="https://twitchtokengenerator.com/" target="_blank" style="font-weight: bold;">Obtener token aquí</a>
+              El token es obligatorio para usar el bot. 
+              <a href="https://twitchtokengenerator.com/" target="_blank" style="font-weight: bold;">Obtener token aqui</a>
             </small>
           </div>
 
@@ -86,10 +93,6 @@
             <div class="stat-item">
               <span class="stat-label">Mensajes</span>
               <span class="stat-value" id="msg-count">0</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">Usuarios</span>
-              <span class="stat-value" id="user-count">0</span>
             </div>
             <div class="stat-item">
               <span class="stat-label">Comandos</span>
@@ -133,6 +136,98 @@
           </div>
         </div>
       </section>
+      
+      </div>
+      
+      <!-- Vista de Configuracion -->
+      <div id="settings-view" class="view hidden">
+        <section class="settings-panel">
+          <div class="panel-card">
+            <div class="settings-header">
+              <h2>Configuracion</h2>
+              <button id="back-btn" class="btn-back">Volver</button>
+            </div>
+            
+            <div class="settings-section">
+              <h3>Audio y Voz</h3>
+              
+              <div class="input-group">
+                <label for="settings-audio-device">Dispositivo de Audio (TTS)</label>
+                <select id="settings-audio-device">
+                  <option value="">Dispositivo predeterminado</option>
+                </select>
+                <small class="input-help">
+                  Selecciona el dispositivo donde se reproducira el audio de la IA
+                </small>
+              </div>
+              
+              <div class="input-group">
+                <label for="voice-select">Voz de ElevenLabs</label>
+                <div style="display: flex; gap: 0.5rem;">
+                  <select id="voice-select" style="flex: 1;">
+                    <!-- Las voces se cargan dinámicamente desde ElevenLabs API -->
+                  </select>
+                  <button id="reload-voices-btn" class="btn btn-secondary" style="padding: 0.5rem;" title="Recargar voces">
+                    🔄
+                  </button>
+                </div>
+                <small class="input-help">
+                  Selecciona la voz para las respuestas de la IA
+                </small>
+              </div>
+              
+              <div class="input-group">
+                <label for="volume-slider">Volumen</label>
+                <input type="range" id="volume-slider" min="0" max="100" value="70" />
+                <span id="volume-value">70%</span>
+                <small class="input-help">
+                  Ajusta el volumen de reproduccion del audio
+                </small>
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h3>API Keys</h3>
+              
+              <div class="input-group">
+                <label for="settings-gemini-key">Gemini API Key</label>
+                <input 
+                  type="password" 
+                  id="settings-gemini-key" 
+                  placeholder="AIzaSy..."
+                  autocomplete="off"
+                />
+                <small class="input-help">
+                  Configura tu API Key de Gemini (se guardara localmente)
+                </small>
+              </div>
+              
+              <div class="input-group">
+                <label for="settings-elevenlabs-key">ElevenLabs API Key</label>
+                <input 
+                  type="password" 
+                  id="settings-elevenlabs-key" 
+                  placeholder="sk_..."
+                  autocomplete="off"
+                />
+                <small class="input-help">
+                  Configura tu API Key de ElevenLabs para TTS
+                </small>
+              </div>
+            </div>
+            
+            <div class="settings-actions">
+              <button id="save-settings-btn" class="btn btn-start">
+                Guardar Configuracion
+              </button>
+              <button id="reset-settings-btn" class="btn btn-stop">
+                Restablecer
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+      
     </main>
 
     <!-- Footer -->

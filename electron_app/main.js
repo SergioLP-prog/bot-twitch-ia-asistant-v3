@@ -55,7 +55,7 @@ app.on('activate', () => {
 });
 
 // IPC Handler: Iniciar el bot de Twitch
-ipcMain.handle('start-bot', async (event, channel, token) => {
+ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, geminiKey, elevenlabsKey) => {
   if (pythonProcess) {
     return { status: 'error', message: 'El bot ya está ejecutándose' };
   }
@@ -76,13 +76,25 @@ ipcMain.handle('start-bot', async (event, channel, token) => {
     };
   }
 
-  // Usar el bot avanzado de Twitch
-  const scriptPath = path.join(__dirname, '..', 'twitch_chat_advanced_electron.py');
+  // Usar el bot de Twitch
+  const scriptPath = path.join(__dirname, '..', 'chatbot.py');
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
 
   try {
-    // Crear proceso Python pasando el canal y token como argumentos
+    // Crear proceso Python pasando el canal, token, dispositivo de audio, voz y API keys
     const args = [scriptPath, channel, token];
+    if (audioDevice && audioDevice !== '') {
+      args.push(audioDevice);
+    }
+    if (voice && voice !== '') {
+      args.push('--voice', voice);
+    }
+    if (geminiKey && geminiKey !== '') {
+      args.push('--gemini-key', geminiKey);
+    }
+    if (elevenlabsKey && elevenlabsKey !== '') {
+      args.push('--elevenlabs-key', elevenlabsKey);
+    }
     
     pythonProcess = spawn(pythonCmd, args, {
       cwd: path.join(__dirname, '..'),
@@ -161,6 +173,105 @@ ipcMain.handle('start-bot', async (event, channel, token) => {
   }
 });
 
+// IPC Handler: Listar dispositivos de audio
+ipcMain.handle('list-audio-devices', async () => {
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const scriptPath = path.join(__dirname, '..', 'twitch_chat_advanced_electron.py');
+  
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const pythonProcess = spawn(pythonCmd, [scriptPath, '--list-audio-devices']);
+    
+    let output = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        try {
+          // Buscar la linea que contiene el JSON válido (empieza con [ y termina con ])
+          const lines = output.split('\n');
+          const jsonLine = lines.find(line => {
+            const trimmed = line.trim();
+            return trimmed.startsWith('[') && trimmed.endsWith(']') && 
+                   !trimmed.includes('[TTS]') && 
+                   !trimmed.includes('[AUDIO]') &&
+                   !trimmed.includes('pygame') &&
+                   !trimmed.includes('Hello from the pygame');
+          });
+          
+          if (jsonLine) {
+            const devices = JSON.parse(jsonLine);
+            resolve(devices);
+          } else {
+            resolve([]);
+          }
+        } catch (e) {
+          console.error('Error parsing audio devices:', e);
+          resolve([]);
+        }
+      } else {
+        resolve([]);
+      }
+    });
+  });
+});
+
+// IPC Handler: Listar voces de ElevenLabs
+ipcMain.handle('list-voices', async (event, elevenlabsKey) => {
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const scriptPath = path.join(__dirname, '..', 'chatbot.py');
+  
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const args = [scriptPath, '--list-voices'];
+    
+    // Agregar API key si se proporciona
+    if (elevenlabsKey && elevenlabsKey !== '') {
+      args.push('--elevenlabs-key', elevenlabsKey);
+    }
+    
+    const pythonProcess = spawn(pythonCmd, args);
+    
+    let output = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        try {
+          // Buscar la linea que contiene el JSON válido (empieza con [ y termina con ])
+          const lines = output.split('\n');
+          const jsonLine = lines.find(line => {
+            const trimmed = line.trim();
+            return trimmed.startsWith('[') && trimmed.endsWith(']') && 
+                   !trimmed.includes('[TTS]') && 
+                   !trimmed.includes('[AUDIO]') &&
+                   !trimmed.includes('pygame') &&
+                   !trimmed.includes('Hello from the pygame');
+          });
+          
+          if (jsonLine) {
+            const voices = JSON.parse(jsonLine);
+            resolve(voices);
+          } else {
+            resolve([]);
+          }
+        } catch (e) {
+          console.error('Error parsing voices:', e);
+          resolve([]);
+        }
+      } else {
+        resolve([]);
+      }
+    });
+  });
+});
+
 // IPC Handler: Detener el bot
 ipcMain.handle('stop-bot', async () => {
   if (!pythonProcess) {
@@ -179,5 +290,40 @@ ipcMain.handle('stop-bot', async () => {
 // IPC Handler: Verificar si el bot está ejecutándose
 ipcMain.handle('check-bot-status', async () => {
   return { running: pythonProcess !== null };
+});
+
+// IPC Handler: Cambiar voz en tiempo real
+ipcMain.handle('change-voice', async (event, voiceId) => {
+  if (!pythonProcess) {
+    return { status: 'error', message: 'El bot no está ejecutándose' };
+  }
+
+  try {
+    // Enviar comando al proceso Python a través de stdin
+    pythonProcess.stdin.write(`CHANGE_VOICE:${voiceId}\n`);
+    return { status: 'success', message: 'Voz cambiada correctamente' };
+  } catch (error) {
+    return { status: 'error', message: error.message };
+  }
+});
+
+// IPC Handler: Actualizar API Keys en tiempo real
+ipcMain.handle('update-api-keys', async (event, geminiKey, elevenlabsKey) => {
+  if (!pythonProcess) {
+    return { status: 'error', message: 'El bot no está ejecutándose' };
+  }
+
+  try {
+    // Enviar comandos al proceso Python a través de stdin
+    if (geminiKey !== undefined) {
+      pythonProcess.stdin.write(`UPDATE_GEMINI_KEY:${geminiKey}\n`);
+    }
+    if (elevenlabsKey !== undefined) {
+      pythonProcess.stdin.write(`UPDATE_ELEVENLABS_KEY:${elevenlabsKey}\n`);
+    }
+    return { status: 'success', message: 'API Keys actualizadas correctamente' };
+  } catch (error) {
+    return { status: 'error', message: error.message };
+  }
 });
 

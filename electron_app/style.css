@@ -103,12 +103,32 @@ body {
 
 /* Contenido principal */
 .main-content {
+  flex: 1;
+  overflow: hidden;
+  padding: 1.5rem;
+}
+
+#main-view {
   display: grid;
   grid-template-columns: 400px 1fr;
   gap: 1.5rem;
-  padding: 1.5rem;
+  height: 100%;
   overflow: hidden;
-  flex: 1;
+}
+
+#main-view.hidden {
+  display: none;
+}
+
+#settings-view {
+  display: none;
+  height: 100%;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+#settings-view.active {
+  display: block;
 }
 
 /* Panel de control */
@@ -134,27 +154,25 @@ body {
 }
 
 .input-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .input-group label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
   font-weight: 500;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
 }
 
 .input-group input {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   background: var(--background);
   border: 2px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text-primary);
-  font-size: 1rem;
+  font-size: 0.9rem;
   transition: all 0.3s ease;
 }
 
@@ -164,12 +182,53 @@ body {
   box-shadow: 0 0 0 3px rgba(145, 70, 255, 0.1);
 }
 
+.input-group select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--background);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Estilos específicos para el selector de voces */
+#voice-select {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#voice-select option {
+  padding: 0.5rem;
+  background: var(--background);
+  color: var(--text-primary);
+  border: none;
+}
+
+#voice-select option:hover {
+  background: var(--surface-light);
+}
+
+#voice-select option:checked {
+  background: var(--primary);
+  color: white;
+}
+
+.input-group select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(145, 70, 255, 0.1);
+}
+
 .input-help {
   display: block;
-  margin-top: 0.5rem;
-  font-size: 0.75rem;
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.3;
 }
 
 .input-help a {
@@ -501,6 +560,103 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--primary);
+}
+
+/* Vistas */
+.view {
+  width: 100%;
+  height: 100%;
+}
+
+.view.active {
+  display: block;
+}
+
+.view.hidden {
+  display: none;
+}
+
+/* Boton de configuracion */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.icon-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.icon-btn:hover {
+  background: var(--surface-light);
+  transform: scale(1.1);
+}
+
+/* Panel de configuracion */
+.settings-panel {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 1rem;
+  min-height: calc(100vh - 2rem);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.settings-header h2 {
+  flex: 1;
+  margin: 0;
+}
+
+.btn-back {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+}
+
+.btn-back:hover {
+  background: var(--surface-light);
+}
+
+.settings-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.settings-section h3 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  color: var(--primary);
+  font-size: 1.1rem;
+}
+
+.settings-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
 }
 
 /* Footer */

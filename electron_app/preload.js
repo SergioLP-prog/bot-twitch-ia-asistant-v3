@@ -4,14 +4,26 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Iniciar el bot con el canal y token especificados
-  startBot: (channel, token) => ipcRenderer.invoke('start-bot', channel, token),
+  // Iniciar el bot con el canal, token, dispositivo de audio, voz y API keys
+  startBot: (channel, token, audioDevice, voice, geminiKey, elevenlabsKey) => ipcRenderer.invoke('start-bot', channel, token, audioDevice, voice, geminiKey, elevenlabsKey),
+
+  // Listar dispositivos de audio
+  listAudioDevices: () => ipcRenderer.invoke('list-audio-devices'),
+
+  // Listar voces de ElevenLabs
+  listVoices: (elevenlabsKey) => ipcRenderer.invoke('list-voices', elevenlabsKey),
 
   // Detener el bot
   stopBot: () => ipcRenderer.invoke('stop-bot'),
 
   // Verificar estado del bot
   checkBotStatus: () => ipcRenderer.invoke('check-bot-status'),
+
+  // Cambiar voz en tiempo real
+  changeVoice: (voiceId) => ipcRenderer.invoke('change-voice', voiceId),
+
+  // Actualizar API Keys en tiempo real
+  updateApiKeys: (geminiKey, elevenlabsKey) => ipcRenderer.invoke('update-api-keys', geminiKey, elevenlabsKey),
 
   // Escuchar salida del bot
   onBotOutput: (callback) => {
