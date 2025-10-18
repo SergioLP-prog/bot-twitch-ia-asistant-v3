@@ -198,7 +198,12 @@
                   autocomplete="off"
                 />
                 <small class="input-help">
-                  Configura tu API Key de Gemini (se guardara localmente)
+                  Configura tu API Key de Gemini (se guardara localmente)<br>
+                  <strong>Límite gratuito:</strong> 50 solicitudes/día. 
+                  <a href="https://ai.google.dev/gemini-api/docs/rate-limits" target="_blank" style="color: var(--primary);">Ver límites</a><br>
+                  <span id="gemini-usage-counter" style="color: var(--text-secondary); font-size: 0.8rem;">
+                    Solicitudes usadas hoy: <span id="gemini-usage-count">0</span>/50
+                  </span>
                 </small>
               </div>
               
@@ -212,6 +217,23 @@
                 />
                 <small class="input-help">
                   Configura tu API Key de ElevenLabs para TTS
+                </small>
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h3>Personalidad de la IA</h3>
+              
+              <div class="input-group">
+                <label for="settings-bot-personality">Personalidad del Bot</label>
+                <textarea 
+                  id="settings-bot-personality" 
+                  rows="4"
+                  placeholder="Ej: Eres un asistente gracioso y sarcastico que responde de forma breve y directa..."
+                  autocomplete="off"
+                ></textarea>
+                <small class="input-help">
+                  Define como quieres que se comporte la IA al responder comandos !IA
                 </small>
               </div>
             </div>

@@ -21,6 +21,8 @@ const volumeSlider = document.getElementById('volume-slider');
 const volumeValue = document.getElementById('volume-value');
 const settingsGeminiKey = document.getElementById('settings-gemini-key');
 const settingsElevenlabsKey = document.getElementById('settings-elevenlabs-key');
+const settingsBotPersonality = document.getElementById('settings-bot-personality');
+const geminiUsageCount = document.getElementById('gemini-usage-count');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 const resetSettingsBtn = document.getElementById('reset-settings-btn');
 const statusIndicator = document.getElementById('status-indicator');
@@ -42,6 +44,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Cargar datos guardados
   loadMainFormData();
   loadSettings();
+  
+  // Actualizar contador de uso de Gemini
+  updateGeminiUsageDisplay();
   
   // Configurar guardado automático
   setupAutoSave();
@@ -203,21 +208,22 @@ async function saveSettings() {
     voice: voiceSelect.value,
     volume: volumeSlider.value,
     geminiKey: settingsGeminiKey.value,
-    elevenlabsKey: settingsElevenlabsKey.value
+    elevenlabsKey: settingsElevenlabsKey.value,
+    botPersonality: settingsBotPersonality.value
   };
   
   localStorage.setItem('botConfig', JSON.stringify(config));
   addSystemLog('Configuracion guardada', 'success');
   
-  // Si el bot está corriendo, actualizar API keys en tiempo real
+  // Si el bot está corriendo, actualizar API keys, personalidad y dispositivo de audio en tiempo real
   if (isRunning) {
     try {
-      const result = await window.electronAPI.updateApiKeys(config.geminiKey, config.elevenlabsKey);
+      const result = await window.electronAPI.updateApiKeys(config.geminiKey, config.elevenlabsKey, config.botPersonality, config.audioDevice);
       if (result.status === 'success') {
-        addSystemLog('API Keys actualizadas en tiempo real', 'success');
+        addSystemLog('Configuracion actualizada en tiempo real', 'success');
       }
     } catch (error) {
-      console.log('Error al actualizar API Keys:', error);
+      console.log('Error al actualizar configuracion:', error);
     }
   }
   
@@ -350,6 +356,13 @@ function setupAutoSave() {
     localStorage.setItem('botConfig', JSON.stringify(config));
     showAutoSaveIndicator();
   });
+  
+  settingsBotPersonality.addEventListener('input', () => {
+    const config = JSON.parse(localStorage.getItem('botConfig') || '{}');
+    config.botPersonality = settingsBotPersonality.value;
+    localStorage.setItem('botConfig', JSON.stringify(config));
+    showAutoSaveIndicator();
+  });
 }
 
 // Cargar configuracion
@@ -363,6 +376,7 @@ function loadSettings() {
     volumeValue.textContent = `${config.volume || 70}%`;
     settingsGeminiKey.value = config.geminiKey || '';
     settingsElevenlabsKey.value = config.elevenlabsKey || '';
+    settingsBotPersonality.value = config.botPersonality || '';
   }
 }
 
@@ -376,6 +390,7 @@ function resetSettings() {
   volumeValue.textContent = '70%';
   settingsGeminiKey.value = '';
   settingsElevenlabsKey.value = '';
+  settingsBotPersonality.value = '';
   
   // También limpiar formulario principal
   channelInput.value = '';
@@ -485,8 +500,9 @@ function setupEventListeners() {
       const voice = config.voice || '21m00Tcm4TlvDq8ikWAM';
       const geminiKey = config.geminiKey || '';
       const elevenlabsKey = config.elevenlabsKey || '';
+      const botPersonality = config.botPersonality || '';
       
-      const result = await window.electronAPI.startBot(channel, token, audioDevice, voice, geminiKey, elevenlabsKey);
+      const result = await window.electronAPI.startBot(channel, token, audioDevice, voice, geminiKey, elevenlabsKey, botPersonality);
       
       if (result.status === 'success') {
         addSystemLog(`Bot conectado al canal: ${channel}`, 'success');
@@ -718,6 +734,9 @@ function addChatMessage(username, message, badges = '', color = '', isCommand = 
 function handleIAResponse(data) {
   const { username, question, response } = data;
   
+  // Incrementar contador de uso de Gemini
+  incrementGeminiUsage();
+  
   // Mostrar en logs del sistema con formato especial
   const logEl = document.createElement('div');
   logEl.className = 'log-entry log-ia';
@@ -789,6 +808,47 @@ function clearWelcomeMessage() {
   if (welcomeMsg) {
     welcomeMsg.remove();
   }
+}
+
+// Funciones para manejar el contador de uso de Gemini
+function incrementGeminiUsage() {
+  const today = new Date().toDateString();
+  const usageData = JSON.parse(localStorage.getItem('geminiUsage') || '{}');
+  
+  if (!usageData[today]) {
+    usageData[today] = 0;
+  }
+  
+  usageData[today]++;
+  localStorage.setItem('geminiUsage', JSON.stringify(usageData));
+  updateGeminiUsageDisplay();
+}
+
+function updateGeminiUsageDisplay() {
+  if (!geminiUsageCount) return;
+  
+  const today = new Date().toDateString();
+  const usageData = JSON.parse(localStorage.getItem('geminiUsage') || '{}');
+  const todayUsage = usageData[today] || 0;
+  
+  geminiUsageCount.textContent = todayUsage;
+  
+  // Cambiar color según el uso
+  const usageCounter = document.getElementById('gemini-usage-counter');
+  if (usageCounter) {
+    if (todayUsage >= 45) {
+      usageCounter.style.color = '#e74c3c'; // Rojo - cerca del límite
+    } else if (todayUsage >= 35) {
+      usageCounter.style.color = '#f39c12'; // Naranja - moderado
+    } else {
+      usageCounter.style.color = 'var(--text-secondary)'; // Normal
+    }
+  }
+}
+
+function resetGeminiUsage() {
+  localStorage.removeItem('geminiUsage');
+  updateGeminiUsageDisplay();
 }
 
 // Función de utilidad para formatear tiempo

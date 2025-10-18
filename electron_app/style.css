@@ -195,6 +195,26 @@ body {
   overflow-y: auto;
 }
 
+.input-group textarea {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--background);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: all 0.3s ease;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.input-group textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(145, 70, 255, 0.1);
+}
+
 /* Estilos específicos para el selector de voces */
 #voice-select {
   max-height: 200px;

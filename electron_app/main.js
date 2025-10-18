@@ -55,7 +55,7 @@ app.on('activate', () => {
 });
 
 // IPC Handler: Iniciar el bot de Twitch
-ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, geminiKey, elevenlabsKey) => {
+ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, geminiKey, elevenlabsKey, botPersonality) => {
   if (pythonProcess) {
     return { status: 'error', message: 'El bot ya está ejecutándose' };
   }
@@ -81,7 +81,7 @@ ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, ge
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
 
   try {
-    // Crear proceso Python pasando el canal, token, dispositivo de audio, voz y API keys
+    // Crear proceso Python pasando el canal, token, dispositivo de audio, voz, API keys y personalidad
     const args = [scriptPath, channel, token];
     if (audioDevice && audioDevice !== '') {
       args.push(audioDevice);
@@ -94,6 +94,9 @@ ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, ge
     }
     if (elevenlabsKey && elevenlabsKey !== '') {
       args.push('--elevenlabs-key', elevenlabsKey);
+    }
+    if (botPersonality && botPersonality !== '') {
+      args.push('--bot-personality', botPersonality);
     }
     
     pythonProcess = spawn(pythonCmd, args, {
@@ -176,7 +179,7 @@ ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, ge
 // IPC Handler: Listar dispositivos de audio
 ipcMain.handle('list-audio-devices', async () => {
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-  const scriptPath = path.join(__dirname, '..', 'twitch_chat_advanced_electron.py');
+  const scriptPath = path.join(__dirname, '..', 'chatbot.py');
   
   return new Promise((resolve, reject) => {
     const { spawn } = require('child_process');
@@ -307,8 +310,8 @@ ipcMain.handle('change-voice', async (event, voiceId) => {
   }
 });
 
-// IPC Handler: Actualizar API Keys en tiempo real
-ipcMain.handle('update-api-keys', async (event, geminiKey, elevenlabsKey) => {
+// IPC Handler: Actualizar API Keys, personalidad y dispositivo de audio en tiempo real
+ipcMain.handle('update-api-keys', async (event, geminiKey, elevenlabsKey, botPersonality, audioDevice) => {
   if (!pythonProcess) {
     return { status: 'error', message: 'El bot no está ejecutándose' };
   }
@@ -321,7 +324,13 @@ ipcMain.handle('update-api-keys', async (event, geminiKey, elevenlabsKey) => {
     if (elevenlabsKey !== undefined) {
       pythonProcess.stdin.write(`UPDATE_ELEVENLABS_KEY:${elevenlabsKey}\n`);
     }
-    return { status: 'success', message: 'API Keys actualizadas correctamente' };
+    if (botPersonality !== undefined) {
+      pythonProcess.stdin.write(`UPDATE_PERSONALITY:${botPersonality}\n`);
+    }
+    if (audioDevice !== undefined) {
+      pythonProcess.stdin.write(`UPDATE_AUDIO_DEVICE:${audioDevice}\n`);
+    }
+    return { status: 'success', message: 'Configuracion actualizada correctamente' };
   } catch (error) {
     return { status: 'error', message: error.message };
   }
