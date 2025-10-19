@@ -16,3 +16,6 @@ sounddevice>=0.4.6
 pydub>=0.25.1
 numpy>=1.24.0
 
+# TTS de fallback (Google TTS gratuito cuando se agota cuota de ElevenLabs)
+gtts>=2.5.0       # Google Text-to-Speech gratuito (opcional)
+
