@@ -54,7 +54,7 @@ npm start
 
 ---
 
-## 🤖 Configurar IA con Gemini (Opcional)
+## 🤖 Configurar IA con Gemini
 
 ### ¿Qué hace la IA?
 
@@ -73,16 +73,10 @@ Bot: ¿Por qué los programadores prefieren la noche? Porque la luz del día cau
 2. Crea una API Key
 3. Cópiala (formato: `AIzaSy...`)
 
-**Paso 2: Configurar en el Código**
-1. Abre `twitch_chat_advanced_electron.py`
-2. Ve a la **línea 89**
-3. Reemplaza:
-   ```python
-   self.gemini_api_key = "TU_API_KEY_DE_GEMINI_AQUI"
-   ```
-   Con tu API Key:
-   ```python
-   self.gemini_api_key = "AIzaSy_TU_API_KEY_REAL"
+**Paso 2: Configurar en pestaña de configuracion**
+1. Abre Pestaña de configuracion haciendo click en ventana con simbolo de tuerca
+2. Ve al apartado de Api key
+3. y pega tus credenciales
    ```
 
 **Paso 3: Instalar Dependencia**
