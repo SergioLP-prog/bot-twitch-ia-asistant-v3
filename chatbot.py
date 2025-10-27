@@ -20,7 +20,6 @@ if sys.platform == 'win32':
 
 try:
     from twitchio.ext import commands
-    from twitchio import Channel, User
 except ImportError:
     print("Error: TwitchIO no esta instalado")
     print("Instala con: pip install twitchio")
@@ -51,7 +50,6 @@ try:
     import sounddevice as sd
     import numpy as np
     from pydub import AudioSegment
-    from pydub.playback import _play_with_simpleaudio
 except ImportError as e:
     print("Advertencia: pygame, requests, sounddevice o pydub no esta instalado")
     print("La funcionalidad de TTS no estara disponible")
@@ -62,6 +60,162 @@ except ImportError as e:
     np = None
     AudioSegment = None
 
+# Intentar importar soundfile como alternativa a pydub para MP3
+try:
+    import soundfile as sf
+    _soundfile_available = True
+except ImportError:
+    sf = None
+    _soundfile_available = False
+    print("Advertencia: soundfile no esta instalado")
+    print("Instala con: pip install soundfile")
+
+# Nota: win32gui, win32con ya no se usan - eliminados para reducir dependencias
+
+# Verificar si sounddevice funciona correctamente en Windows
+_sounddevice_available = False
+if sd is not None:
+    try:
+        devices = sd.query_devices()
+        
+        # Intentar una prueba de reproducción simple para verificar que funciona
+        import numpy as np
+        test_samples = np.zeros((1000, 2), dtype=np.float32)
+        try:
+            sd.play(test_samples, samplerate=44100)
+            sd.stop()
+            _sounddevice_available = True
+            print(f"[AUDIO] sounddevice disponible - {len(devices)} dispositivos encontrados", flush=True)
+        except Exception as test_error:
+            print(f"[AUDIO] ⚠️ sounddevice no puede reproducir: {test_error}", flush=True)
+            print(f"[AUDIO] Usando pygame como método principal de reproducción", flush=True)
+            _sounddevice_available = False
+    except Exception as e:
+        print(f"[AUDIO] ⚠️ sounddevice no disponible: {e}", flush=True)
+        print(f"[AUDIO] Usando pygame (no soporta dispositivos específicos)", flush=True)
+        _sounddevice_available = False
+
+# Función auxiliar para reproducir audio en un dispositivo específico usando WASAPI
+def _play_audio_on_device(file_path: str, device_id: Optional[int] = None, volume: int = 70):
+    """Reproduce audio en un dispositivo específico usando WASAPI a través de sounddevice
+    
+    Args:
+        file_path: Ruta al archivo de audio
+        device_id: ID del dispositivo de audio (None para predeterminado)
+        volume: Nivel de volumen (0-100), por defecto 70
+    """
+    try:
+        if sd is None or AudioSegment is None or np is None:
+            print(f"[AUDIO] ⚠️ Librerías de audio no disponibles", flush=True)
+            return False
+        
+        # Verificar que el archivo existe
+        if not os.path.exists(file_path):
+            print(f"[AUDIO] ❌ Archivo de audio no existe: {file_path}", flush=True)
+            print(f"[AUDIO] Directorio actual: {os.getcwd()}", flush=True)
+            print(f"[AUDIO] ¿Es ruta absoluta?: {os.path.isabs(file_path)}", flush=True)
+            return False
+        
+        # Verificar tamaño del archivo
+        file_size = os.path.getsize(file_path)
+        
+        if file_size == 0:
+            print(f"[AUDIO] ❌ Archivo está vacío", flush=True)
+            return False
+        
+        # Validar que el dispositivo existe y está disponible
+        if device_id is not None:
+            try:
+                devices = sd.query_devices()
+                if device_id >= len(devices):
+                    print(f"[AUDIO] ⚠️ Dispositivo {device_id} no encontrado (hay {len(devices)} disponibles), usando predeterminado", flush=True)
+                    device_id = None
+                else:
+                    device_info = devices[device_id]
+                    device_name = device_info.get('name', 'Unknown')
+                    max_channels = device_info.get('max_output_channels', 0)
+                    
+                    if max_channels == 0:
+                        print(f"[AUDIO] ⚠️ Dispositivo {device_name} no tiene salida de audio, usando predeterminado", flush=True)
+                        device_id = None
+            except Exception as verify_error:
+                print(f"[AUDIO] ⚠️ Error al verificar dispositivo: {verify_error}", flush=True)
+                device_id = None
+        
+        # Cargar audio - intentar con soundfile primero, luego pydub como fallback
+        samples = None
+        sample_rate = 22050  # Tasa de muestreo por defecto
+        
+        if _soundfile_available and sf is not None:
+            try:
+                samples, sample_rate = sf.read(file_path, dtype='float32')
+                
+                # Asegurar que es 2D (canales x muestras)
+                if len(samples.shape) == 1:
+                    samples = samples.reshape((-1, 1))
+                elif len(samples.shape) == 2 and samples.shape[0] < samples.shape[1]:
+                    # Si está transpuesto, corregirlo
+                    samples = samples.T
+                    
+            except Exception as sf_error:
+                print(f"[AUDIO] ⚠️ Error con soundfile: {sf_error}, intentando con pydub...", flush=True)
+                samples = None
+        
+        # Fallback a pydub si soundfile falló
+        if samples is None and AudioSegment is not None:
+            try:
+                print(f"[AUDIO] Cargando audio con pydub...", flush=True)
+                audio = AudioSegment.from_mp3(file_path)
+                sample_rate = audio.frame_rate
+                
+                # Convertir a numpy array
+                samples = np.array(audio.get_array_of_samples())
+                
+                # Reshape según canales
+                if audio.channels == 2:
+                    samples = samples.reshape((-1, 2)).astype(np.float32) / (2**15)
+                else:
+                    samples = samples.reshape((-1, 1)).astype(np.float32) / (2**15)
+                
+                print(f"[AUDIO] Audio cargado con pydub: {sample_rate}Hz, {samples.shape}", flush=True)
+                
+            except Exception as load_error:
+                print(f"[AUDIO] ❌ Error al cargar archivo de audio: {load_error}", flush=True)
+                import traceback
+                traceback.print_exc()
+                return False
+        
+        if samples is None:
+            print(f"[AUDIO] ❌ No se pudo cargar el archivo de audio", flush=True)
+            return False
+        
+        # Aplicar volumen (0-100) a las muestras
+        volume_factor = volume / 100.0
+        samples = samples * volume_factor
+        
+        # Reproducir con sounddevice
+        try:
+            if device_id is not None:
+                # Intentar reproducir en dispositivo específico
+                sd.play(samples, samplerate=sample_rate, device=device_id)
+            else:
+                # Reproducir en dispositivo predeterminado
+                sd.play(samples, samplerate=sample_rate)
+            
+            sd.wait()
+            return True
+        except Exception as play_error:
+            print(f"[AUDIO] ❌ Error al iniciar reproducción con sounddevice: {play_error}", flush=True)
+            print(f"[AUDIO] Tipo de error: {type(play_error).__name__}", flush=True)
+            return False
+            
+    except Exception as e:
+        print(f"[AUDIO] ❌ Error general al reproducir en dispositivo: {e}", flush=True)
+        print(f"[AUDIO] Tipo de error: {type(e).__name__}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return False
+
 
 class TwitchChatBotAdvanced(commands.Bot):
     """
@@ -69,7 +223,7 @@ class TwitchChatBotAdvanced(commands.Bot):
     Compatible con interfaz Electron
     """
     
-    def __init__(self, channel_name: str, token: str, gemini_key: str = "", elevenlabs_key: str = "", bot_personality: str = ""):
+    def __init__(self, channel_name: str, token: str, gemini_key: str = "", elevenlabs_key: str = "", bot_personality: str = "", volume: int = 70):
         """
         Inicializa el bot avanzado
         
@@ -79,6 +233,7 @@ class TwitchChatBotAdvanced(commands.Bot):
             gemini_key (str): API Key de Google Gemini (opcional)
             elevenlabs_key (str): API Key de ElevenLabs (opcional)
             bot_personality (str): Personalidad del bot para respuestas de IA (opcional)
+            volume (int): Nivel de volumen (0-100), por defecto 70
         
         Raises:
             ValueError: Si el token no es proporcionado o es inválido
@@ -120,12 +275,18 @@ class TwitchChatBotAdvanced(commands.Bot):
         self.gemini_enabled = genai is not None and self.gemini_api_key and len(self.gemini_api_key) > 0
         
         # Personalidad del bot
-        self.bot_personality = bot_personality if bot_personality else "Eres un asistente amigable y util que responde de forma clara y concisa."
+        # Si viene una personalidad, usarla. Si viene vacía o es None, usar la por defecto
+        if bot_personality and bot_personality.strip():
+            self.bot_personality = bot_personality.strip()
+        else:
+            self.bot_personality = "Eres un asistente amigable y util que responde de forma clara y concisa."
         
         # API Key de ElevenLabs para TTS
         self.elevenlabs_api_key = elevenlabs_key if elevenlabs_key else ""
         self.elevenlabs_voice_id = "21m00Tcm4TlvDq8ikWAM"
         self.audio_device_id = None
+        self.volume = volume if 0 <= volume <= 100 else 70
+        self.ia_command = "!IA"  # Comando de IA por defecto
         self.elevenlabs_enabled = pygame is not None and requests is not None and self.elevenlabs_api_key and len(self.elevenlabs_api_key) > 0
         
         # Caché de voces para evitar múltiples peticiones a la API
@@ -160,15 +321,67 @@ class TwitchChatBotAdvanced(commands.Bot):
     def update_audio_device(self, device_id: str):
         """Actualiza el dispositivo de audio en tiempo real"""
         try:
-            device_id_int = int(device_id) if device_id and device_id.isdigit() else None
-            if device_id_int is not None:
-                self.audio_device_id = device_id_int
-                print(f"[AUDIO] Dispositivo de audio actualizado a: {device_id_int}", flush=True)
-            else:
+            print(f"[AUDIO] Recibido comando para cambiar dispositivo: '{device_id}'", flush=True)
+            
+            # Manejar string vacío o None
+            if not device_id or device_id == '' or device_id.strip() == '':
                 self.audio_device_id = None
-                print(f"[AUDIO] Usando dispositivo de audio predeterminado", flush=True)
+                print(f"[AUDIO] Usando dispositivo predeterminado del sistema", flush=True)
+            else:
+                # Intentar convertir a int
+                try:
+                    device_id_int = int(device_id)
+                    self.audio_device_id = device_id_int
+                    
+                    # Verificar que el dispositivo existe
+                    if sd is not None:
+                        try:
+                            available_devices = sd.query_devices()
+                            device_info = None
+                            for i, dev in enumerate(available_devices):
+                                if i == device_id_int:
+                                    device_info = dev
+                                    break
+                            
+                            if device_info and device_info.get('max_output_channels', 0) > 0:
+                                device_name = device_info['name']
+                                print(f"[AUDIO] Dispositivo actualizado a: ID {device_id_int} ({device_name})", flush=True)
+                                print(f"[AUDIO] ℹ️ Usando dispositivo específico para reproducción de audio", flush=True)
+                            else:
+                                print(f"[AUDIO] ⚠️ Dispositivo {device_id_int} no es válido o no tiene salida, usando predeterminado", flush=True)
+                        except Exception as verify_error:
+                            print(f"[AUDIO] Error al verificar dispositivo: {verify_error}", flush=True)
+                    else:
+                        print(f"[AUDIO] Dispositivo de audio configurado a: {device_id_int}", flush=True)
+                except ValueError:
+                    # Si no es un número válido, usar None
+                    self.audio_device_id = None
+                    print(f"[AUDIO] ⚠️ ID de dispositivo inválido: '{device_id}'. Usando predeterminado", flush=True)
         except Exception as e:
-            print(f"[AUDIO] Error al actualizar dispositivo: {e}", flush=True)
+            print(f"[AUDIO] ❌ Error al actualizar dispositivo: {e}", flush=True)
+            self.audio_device_id = None
+    
+    def update_volume(self, volume: str):
+        """Actualiza el volumen en tiempo real"""
+        try:
+            volume_int = int(volume)
+            # Limitar el volumen entre 0 y 100
+            self.volume = max(0, min(100, volume_int))
+        except ValueError:
+            print(f"[AUDIO] ⚠️ Volumen inválido: '{volume}'", flush=True)
+        except Exception as e:
+            print(f"[AUDIO] ❌ Error al actualizar volumen: {e}", flush=True)
+    
+    def update_ia_command(self, ia_command: str):
+        """Actualiza el comando de IA en tiempo real"""
+        try:
+            if ia_command and len(ia_command) <= 20:
+                self.ia_command = ia_command.strip()
+                print(f"[IA] Comando de IA actualizado a: '{self.ia_command}'", flush=True)
+            else:
+                print(f"[IA] ⚠️ Comando de IA inválido (máximo 20 caracteres): '{ia_command}'", flush=True)
+        except Exception as e:
+            print(f"[IA] ❌ Error al actualizar comando de IA: {e}", flush=True)
     
     def get_voice_name(self, voice_id: str) -> str:
         """Obtiene el nombre de una voz por su ID (usa caché)"""
@@ -186,7 +399,8 @@ class TwitchChatBotAdvanced(commands.Bot):
                 "xi-api-key": self.elevenlabs_api_key
             }
             
-            response = requests.get(url, headers=headers)
+            # Configurar timeout para evitar que la conexión se cuelgue
+            response = requests.get(url, headers=headers, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
@@ -257,7 +471,8 @@ class TwitchChatBotAdvanced(commands.Bot):
                 "xi-api-key": self.elevenlabs_api_key
             }
             
-            response = requests.get(url, headers=headers)
+            # Configurar timeout para evitar que la conexión se cuelgue
+            response = requests.get(url, headers=headers, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
@@ -302,7 +517,7 @@ class TwitchChatBotAdvanced(commands.Bot):
     
     @staticmethod
     def list_audio_devices():
-        """Lista todos los dispositivos de audio disponibles"""
+        """Lista todos los dispositivos de audio válidos (solo salida)"""
         if sd is None:
             print("sounddevice no esta disponible")
             return []
@@ -310,10 +525,13 @@ class TwitchChatBotAdvanced(commands.Bot):
         try:
             devices = sd.query_devices()
             output_devices = []
+            total_devices = 0
             
-            print(f"[AUDIO] Encontrados {len(devices)} dispositivos de audio", flush=True)
+            print(f"[AUDIO] Analizando {len(devices)} dispositivos de audio...", flush=True)
             
             for i, device in enumerate(devices):
+                total_devices += 1
+                # Solo incluir dispositivos con salida válida
                 if device['max_output_channels'] > 0:
                     device_info = {
                         'id': i,
@@ -323,7 +541,7 @@ class TwitchChatBotAdvanced(commands.Bot):
                     output_devices.append(device_info)
                     print(f"[AUDIO] [{i}] {device['name']} ({device['max_output_channels']} canales)", flush=True)
             
-            print(f"[AUDIO] Total dispositivos de salida: {len(output_devices)}", flush=True)
+            print(f"[AUDIO] Dispositivos válidos: {len(output_devices)} de {total_devices} totales", flush=True)
             return output_devices
             
         except Exception as e:
@@ -338,9 +556,7 @@ class TwitchChatBotAdvanced(commands.Bot):
         
         # Mostrar info de TTS fallback
         if self.elevenlabs_enabled:
-            if gTTS is not None:
-                print("[TTS] Sistema de fallback activado: Si se agota la cuota de ElevenLabs, se usará Google TTS gratuito", flush=True)
-            else:
+            if gTTS is None:
                 print("[TTS] Fallback no disponible. Instala gtts para tener respaldo automático: pip install gtts", flush=True)
         
         print(flush=True)
@@ -392,12 +608,12 @@ class TwitchChatBotAdvanced(commands.Bot):
                 'is_subscriber': message.author.is_subscriber
             })
         
-        # Detectar comando !IA
-        if message.content.startswith('!IA ') or message.content.startswith('!ia '):
+        # Detectar comando de IA personalizado (case-insensitive)
+        ia_command_with_space = f'{self.ia_command} '
+        message_starts_with_command = message.content.upper().startswith(ia_command_with_space.upper())
+        
+        if message_starts_with_command:
             await self.handle_ia_command(message)
-        # Procesar otros comandos
-        elif message.content.startswith('!'):
-            await self.handle_commands(message)
     
     def _should_show_message(self, message) -> bool:
         """Determina si el mensaje debe mostrarse según los filtros"""
@@ -493,9 +709,10 @@ class TwitchChatBotAdvanced(commands.Bot):
         print(f"Modo de filtro: {modes.get(mode, 'Desconocido')}")
     
     async def handle_ia_command(self, message):
-        """Maneja comandos !IA enviándolos a Gemini"""
-        # Extraer el contenido después de !IA
-        content = message.content[4:].strip()  # Remover "!IA " o "!ia "
+        """Maneja comandos personalizados enviándolos a Gemini"""
+        # Extraer el contenido después del comando personalizado
+        command_length = len(self.ia_command)
+        content = message.content[command_length:].strip()  # Remover el comando y el espacio
         username = message.author.name
         
         print(f"[IA] Mensaje recibido de {username}: {content}", flush=True)
@@ -507,7 +724,7 @@ class TwitchChatBotAdvanced(commands.Bot):
             return
         
         if not content:
-            response = "Debes incluir un mensaje despues de !IA"
+            response = f"Debes incluir un mensaje despues de {self.ia_command}"
             print(f"[IA] {response}", flush=True)
             return
         
@@ -561,8 +778,6 @@ class TwitchChatBotAdvanced(commands.Bot):
         # Limitar el tamaño de la memoria por usuario
         if len(self.user_memory[username]) > self.max_memory_per_user:
             self.user_memory[username] = self.user_memory[username][-self.max_memory_per_user:]
-        
-        print(f"[MEMORIA] Guardada interacción para {username} ({len(self.user_memory[username])} en memoria)", flush=True)
     
     def clear_user_memory(self, username: str = None):
         """Limpia la memoria de un usuario específico o de todos los usuarios"""
@@ -592,20 +807,20 @@ class TwitchChatBotAdvanced(commands.Bot):
             client = genai.Client(api_key=self.gemini_api_key)
             
             # Usar personalidad configurada por el usuario
-            contexto = self.bot_personality + " Limita tus respuestas a un máximo de 150 caracteres."
+            contexto = self.bot_personality
             
             # Obtener memoria del usuario si existe
             memory_context = self._get_user_memory_context(username)
             
             # Mensaje completo con contexto y memoria
-            mensaje_completo = f"El usuario {username} pregunta: {content}"
+            mensaje_completo = f"{username}: {content}"
             if memory_context:
                 mensaje_completo = memory_context + "\n\n" + mensaje_completo
                 print(f"[MEMORIA] Usando contexto de memoria para {username}", flush=True)
             
             # Llamar a la API de Gemini
             response = client.models.generate_content(
-                model="gemini-2.0-flash-exp",
+                model="gemini-2.0-flash",
                 contents=[contexto, mensaje_completo]
             )
             
@@ -670,25 +885,46 @@ class TwitchChatBotAdvanced(commands.Bot):
             temp_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
             tts.save(temp_path)
             
-            # Reproducir con pygame
-            if pygame is None:
-                print("[TTS FALLBACK] Pygame no disponible", flush=True)
-                return
-            
-            if not pygame.mixer.get_init():
-                pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
-            
-            pygame.mixer.music.load(temp_path)
-            pygame.mixer.music.play()
-            
-            # Esperar a que termine
-            while pygame.mixer.music.get_busy():
-                await asyncio.sleep(0.1)
-            
-            # Descargar archivo de pygame
-            pygame.mixer.music.unload()
-            
-            print("[TTS FALLBACK] ✅ Audio reproducido con Google TTS", flush=True)
+            # Usar la función centralizada para reproducir audio
+            if _sounddevice_available:
+                success = _play_audio_on_device(temp_path, device_id=self.audio_device_id, volume=self.volume)
+                if success:
+                    print("[TTS FALLBACK] ✅ Audio reproducido con Google TTS usando sounddevice", flush=True)
+                else:
+                    # Fallback a pygame
+                    print("[TTS FALLBACK] Usando pygame como fallback", flush=True)
+                    if pygame is None:
+                        print("[TTS FALLBACK] Pygame no disponible", flush=True)
+                        return
+                    
+                    if not pygame.mixer.get_init():
+                        pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+                    
+                    pygame.mixer.music.load(temp_path)
+                    pygame.mixer.music.play()
+                    
+                    while pygame.mixer.music.get_busy():
+                        await asyncio.sleep(0.1)
+                    
+                    pygame.mixer.music.unload()
+                    print("[TTS FALLBACK] ✅ Audio reproducido con Google TTS", flush=True)
+            else:
+                # Usar pygame si sounddevice no está disponible
+                if pygame is None:
+                    print("[TTS FALLBACK] Pygame no disponible", flush=True)
+                    return
+                
+                if not pygame.mixer.get_init():
+                    pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+                
+                pygame.mixer.music.load(temp_path)
+                pygame.mixer.music.play()
+                
+                while pygame.mixer.music.get_busy():
+                    await asyncio.sleep(0.1)
+                
+                pygame.mixer.music.unload()
+                print("[TTS FALLBACK] ✅ Audio reproducido con Google TTS", flush=True)
             
             # Limpiar archivo temporal
             try:
@@ -736,8 +972,8 @@ class TwitchChatBotAdvanced(commands.Bot):
                 }
             }
             
-            # Llamar a la API de ElevenLabs
-            response = requests.post(url, json=data, headers=headers)
+            # Llamar a la API de ElevenLabs con timeout de seguridad
+            response = requests.post(url, json=data, headers=headers, timeout=30)
             
             if response.status_code != 200:
                 # Detectar error de cuota agotada
@@ -776,58 +1012,91 @@ class TwitchChatBotAdvanced(commands.Bot):
             # Guardar audio en archivo temporal
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
                 temp_file.write(response.content)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())  # Asegurar que se escriba en disco
                 temp_path = temp_file.name
             
+            # Verificar que el archivo existe después de crearlo
+            if not os.path.exists(temp_path):
+                print(f"[TTS] ❌ Error: Archivo temporal no se creó correctamente en: {temp_path}", flush=True)
+                await self._google_tts_fallback(text)
+                return
+            
+            # Verificar que el archivo no está vacío
+            if os.path.getsize(temp_path) == 0:
+                print(f"[TTS] ❌ Error: Archivo temporal está vacío", flush=True)
+                os.unlink(temp_path)
+                await self._google_tts_fallback(text)
+                return
+            
             # Reproducir audio
-            if self.audio_device_id is not None and sd is not None and AudioSegment is not None and np is not None:
-                # Usar sounddevice para reproducir en dispositivo específico
-                try:
-                    print(f"[TTS] Reproduciendo en dispositivo {self.audio_device_id}", flush=True)
+            # Nota: pygame no soporta dispositivos específicos, siempre usa el predeterminado de Windows
+            # Por eso si sounddevice falla, debemos informar al usuario de esta limitación
+            
+            # Intentar usar sounddevice solo si está disponible
+            if _sounddevice_available and sd is not None and AudioSegment is not None and np is not None:
+                if self.audio_device_id is not None:
+                    success = _play_audio_on_device(temp_path, device_id=self.audio_device_id, volume=self.volume)
                     
-                    # Cargar audio con pydub
-                    audio = AudioSegment.from_mp3(temp_path)
+                    if success:
+                        print(f"[TTS] ✅ Audio reproducido correctamente en dispositivo específico", flush=True)
+                        
+                        # Si se reprodujo exitosamente, resetear flag de cuota (por si se había agotado antes)
+                        if self.elevenlabs_quota_exceeded:
+                            self.elevenlabs_quota_exceeded = False
+                            self.using_google_tts_fallback = False
+                            print("[TTS] ✅ Cuota de ElevenLabs restaurada, volviendo a usar voces premium", flush=True)
+                        
+                        # Limpiar archivo temporal
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+                        return
+                    else:
+                        print(f"[TTS] ❌ No se pudo reproducir en dispositivo específico", flush=True)
+                        print(f"[TTS] ℹ️ Se reproducirá en el dispositivo predeterminado de Windows", flush=True)
+                else:
+                    # No hay dispositivo específico configurado, usar predeterminado
+                    print(f"[TTS] Reproduciendo en dispositivo predeterminado", flush=True)
+                    success = _play_audio_on_device(temp_path, device_id=None, volume=self.volume)
                     
-                    # Convertir a numpy array
-                    samples = np.array(audio.get_array_of_samples())
-                    
-                    # Si es stereo, reshape
-                    if audio.channels == 2:
-                        samples = samples.reshape((-1, 2))
-                    
-                    # Normalizar a float32
-                    samples = samples.astype(np.float32) / (2**15)
-                    
-                    # Reproducir con sounddevice en el dispositivo específico
-                    sd.play(samples, samplerate=audio.frame_rate, device=self.audio_device_id)
-                    sd.wait()
-                    
-                    print(f"[TTS] Audio reproducido correctamente en dispositivo {self.audio_device_id}", flush=True)
-                except Exception as e:
-                    print(f"[TTS] Error al reproducir con sounddevice: {e}", flush=True)
-                    print(f"[TTS] Usando pygame como fallback", flush=True)
-                    
-                    # Fallback a pygame
-                    if not pygame.mixer.get_init():
-                        pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
-                    
-                    pygame.mixer.music.load(temp_path)
-                    pygame.mixer.music.play()
-                    
-                    while pygame.mixer.music.get_busy():
-                        await asyncio.sleep(0.1)
-            else:
-                # Usar pygame si no se especifica dispositivo
-                if not pygame.mixer.get_init():
-                    pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
-                
-                pygame.mixer.music.load(temp_path)
-                pygame.mixer.music.play()
-                
-                # Esperar a que termine de reproducir
-                while pygame.mixer.music.get_busy():
-                    await asyncio.sleep(0.1)
-                
-                print(f"[TTS] Audio reproducido correctamente", flush=True)
+                    if success:
+                        print(f"[TTS] ✅ Audio reproducido correctamente", flush=True)
+                        
+                        # Si se reprodujo exitosamente, resetear flag de cuota
+                        if self.elevenlabs_quota_exceeded:
+                            self.elevenlabs_quota_exceeded = False
+                            self.using_google_tts_fallback = False
+                            print("[TTS] ✅ Cuota de ElevenLabs restaurada, volviendo a usar voces premium", flush=True)
+                        
+                        # Limpiar archivo temporal
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+                        return
+            
+            # Si llegamos aquí, usar pygame como fallback
+            print(f"[TTS] Usando pygame como método de reproducción", flush=True)
+            
+            if self.audio_device_id is not None:
+                print(f"[TTS] ⚠️ pygame no soporta dispositivos específicos", flush=True)
+                print(f"[TTS] El audio se reproducirá en el dispositivo PREDETERMINADO de Windows", flush=True)
+                print(f"[TTS] Para cambiar el dispositivo, cambia el predeterminado en: Configuración → Sistema → Sonido → Dispositivo de salida", flush=True)
+            
+            # Usar pygame para reproducir
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+            
+            pygame.mixer.music.load(temp_path)
+            pygame.mixer.music.play()
+            
+            # Esperar a que termine de reproducir
+            while pygame.mixer.music.get_busy():
+                await asyncio.sleep(0.1)
+            
+            print(f"[TTS] ✅ Audio reproducido correctamente", flush=True)
             
             # Si se reprodujo exitosamente, resetear flag de cuota (por si se había agotado antes)
             if self.elevenlabs_quota_exceeded:
@@ -916,7 +1185,7 @@ class TwitchChatBotAdvanced(commands.Bot):
             count = len(self.user_memory[username])
             await ctx.send(f"@{username} tengo {count} interacciones tuyas en memoria")
         else:
-            await ctx.send(f"@{username} aun no tengo memoria de ti. Usa !IA para hablar conmigo")
+            await ctx.send(f"@{username} aun no tengo memoria de ti")
     
     @commands.command(name='resetmemoria')
     async def reset_memory_command(self, ctx, username: str = None):
@@ -980,6 +1249,12 @@ async def process_commands(bot, command_queue):
                 elif command.startswith('UPDATE_AUDIO_DEVICE:'):
                     audio_device = command.replace('UPDATE_AUDIO_DEVICE:', '').strip()
                     bot.update_audio_device(audio_device)
+                elif command.startswith('UPDATE_VOLUME:'):
+                    volume = command.replace('UPDATE_VOLUME:', '').strip()
+                    bot.update_volume(volume)
+                elif command.startswith('UPDATE_IA_COMMAND:'):
+                    ia_command = command.replace('UPDATE_IA_COMMAND:', '').strip()
+                    bot.update_ia_command(ia_command)
                 elif command == 'STOP':
                     break
             
@@ -989,7 +1264,7 @@ async def process_commands(bot, command_queue):
             print(f"[CMD] Error procesando comando: {e}", flush=True)
 
 
-async def run_bot(channel_name: str, token: str, audio_device: Optional[int] = None, voice_id: str = "21m00Tcm4TlvDq8ikWAM", gemini_key: str = "", elevenlabs_key: str = "", bot_personality: str = ""):
+async def run_bot(channel_name: str, token: str, audio_device: Optional[int] = None, voice_id: str = "21m00Tcm4TlvDq8ikWAM", volume: int = 70, gemini_key: str = "", elevenlabs_key: str = "", bot_personality: str = "", ia_command: str = "!IA"):
     """
     Ejecuta el bot con el canal especificado
     
@@ -1005,13 +1280,16 @@ async def run_bot(channel_name: str, token: str, audio_device: Optional[int] = N
     Raises:
         ValueError: Si el token es invalido
     """
-    bot = TwitchChatBotAdvanced(channel_name, token, gemini_key, elevenlabs_key, bot_personality)
+    bot = TwitchChatBotAdvanced(channel_name, token, gemini_key, elevenlabs_key, bot_personality, volume)
     
     if audio_device is not None:
         bot.set_audio_device(audio_device)
     
     # Configurar voz
     bot.elevenlabs_voice_id = voice_id
+    
+    # Configurar comando de IA personalizado
+    bot.ia_command = ia_command
     
     # Crear cola de comandos y thread para stdin
     command_queue = queue.Queue()
@@ -1043,9 +1321,11 @@ def main():
         if sd is not None:
             try:
                 all_devices = sd.query_devices()
-                print(f"[AUDIO] Encontrados {len(all_devices)} dispositivos de audio", flush=True)
+                total_devices = len(all_devices)
+                print(f"[AUDIO] Analizando {total_devices} dispositivos de audio...", flush=True)
                 
                 for i, device in enumerate(all_devices):
+                    # Solo incluir dispositivos válidos con salida de audio
                     if device['max_output_channels'] > 0:
                         device_info = {
                             'id': i,
@@ -1055,7 +1335,7 @@ def main():
                         devices.append(device_info)
                         print(f"[AUDIO] [{i}] {device['name']} ({device['max_output_channels']} canales)", flush=True)
                 
-                print(f"[AUDIO] Total dispositivos de salida: {len(devices)}", flush=True)
+                print(f"[AUDIO] Dispositivos válidos: {len(devices)} de {total_devices} totales", flush=True)
             except Exception as e:
                 print(f"[AUDIO] Error al listar dispositivos: {e}", flush=True)
                 devices = []
@@ -1098,10 +1378,20 @@ def main():
         
         # Procesar argumentos opcionales
         i = 3
+        volume = 70  # Volumen por defecto: 70%
+        ia_command = '!IA'  # Comando por defecto: !IA
         while i < len(sys.argv):
             arg = sys.argv[i]
             if arg == '--voice' and i + 1 < len(sys.argv):
                 voice_id = sys.argv[i + 1].strip()
+                i += 2
+            elif arg == '--volume' and i + 1 < len(sys.argv):
+                try:
+                    volume = int(sys.argv[i + 1].strip())
+                    # Limitar el volumen entre 0 y 100
+                    volume = max(0, min(100, volume))
+                except ValueError:
+                    pass
                 i += 2
             elif arg == '--gemini-key' and i + 1 < len(sys.argv):
                 gemini_key = sys.argv[i + 1].strip()
@@ -1111,6 +1401,9 @@ def main():
                 i += 2
             elif arg == '--bot-personality' and i + 1 < len(sys.argv):
                 bot_personality = sys.argv[i + 1].strip()
+                i += 2
+            elif arg == '--ia-command' and i + 1 < len(sys.argv):
+                ia_command = sys.argv[i + 1].strip()
                 i += 2
             elif arg.isdigit():
                 audio_device = int(arg)
@@ -1150,7 +1443,7 @@ def main():
     
     # Ejecutar bot
     try:
-        asyncio.run(run_bot(channel, token, audio_device, voice_id, gemini_key, elevenlabs_key, bot_personality))
+        asyncio.run(run_bot(channel, token, audio_device, voice_id, volume, gemini_key, elevenlabs_key, bot_personality, ia_command))
     except ValueError as e:
         print(f"\nError de validacion: {e}")
     except KeyboardInterrupt:

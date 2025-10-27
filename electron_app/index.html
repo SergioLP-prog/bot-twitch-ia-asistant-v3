@@ -8,6 +8,31 @@
 </head>
 <body>
   <div class="app-container">
+    <!-- Modal de Verificación de Dependencias -->
+    <div id="dependencies-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>🔍 Verificando Dependencias</h2>
+        </div>
+        <div class="modal-body">
+          <div id="dependencies-status">
+            <div class="checking-message">
+              <div class="spinner"></div>
+              <p>Verificando Python y dependencias...</p>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" id="dependencies-footer" style="display: none;">
+          <button id="install-dependencies-btn" class="btn btn-start">
+            📦 Instalar Dependencias Faltantes
+          </button>
+          <button id="skip-install-btn" class="btn btn-stop">
+            Continuar Sin Instalar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Header -->
     <header class="app-header">
       <div class="header-content">
@@ -79,7 +104,6 @@
             <p><strong>ℹ️ Información:</strong></p>
             <ul>
               <li>🔑 Token OAuth es OBLIGATORIO para usar el bot</li>
-              <li>✅ Con token: Leer mensajes, enviar comandos, estadísticas</li>
               <li>🔗 Obtener API Key de Gemini en: <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com</a></li>
               <li>🔗 Obtener API Key de ElevenLabs en: <a href="https://elevenlabs.io/dashboard" target="_blank">elevenlabs.io</a></li>
               <li>🔗 Obtener token en: <a href="https://twitchtokengenerator.com/" target="_blank">twitchtokengenerator.com</a></li>
@@ -228,6 +252,20 @@
                 ></textarea>
                 <small class="input-help">
                   Define como quieres que se comporte la IA al responder comandos !IA
+                </small>
+              </div>
+              
+              <div class="input-group">
+                <label for="settings-ia-command">Comando de IA</label>
+                <input 
+                  type="text" 
+                  id="settings-ia-command" 
+                  placeholder="!IA"
+                  maxlength="20"
+                  autocomplete="off"
+                />
+                <small class="input-help">
+                  Comando para activar la IA (por defecto: !IA)
                 </small>
               </div>
             </div>

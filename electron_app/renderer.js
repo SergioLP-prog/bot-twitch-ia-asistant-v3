@@ -22,6 +22,7 @@ const volumeValue = document.getElementById('volume-value');
 const settingsGeminiKey = document.getElementById('settings-gemini-key');
 const settingsElevenlabsKey = document.getElementById('settings-elevenlabs-key');
 const settingsBotPersonality = document.getElementById('settings-bot-personality');
+const settingsIACommand = document.getElementById('settings-ia-command');
 const geminiUsageCount = document.getElementById('gemini-usage-count');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 const resetSettingsBtn = document.getElementById('reset-settings-btn');
@@ -41,6 +42,9 @@ let isRunning = false;
 
 // Inicialización
 document.addEventListener('DOMContentLoaded', async () => {
+  // Primero verificar dependencias
+  await checkDependencies();
+  
   // Cargar datos guardados
   loadMainFormData();
   loadSettings();
@@ -63,6 +67,153 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadVoices();
   addSystemLog('Aplicacion iniciada correctamente', 'system');
 });
+
+// Verificar dependencias
+async function checkDependencies() {
+  const modal = document.getElementById('dependencies-modal');
+  const dependenciesStatus = document.getElementById('dependencies-status');
+  const installBtn = document.getElementById('install-dependencies-btn');
+  const skipBtn = document.getElementById('skip-install-btn');
+  const footer = document.getElementById('dependencies-footer');
+  
+  try {
+    const checkResult = await window.electronAPI.checkDependencies();
+    
+    // Si todas las dependencias están instaladas, no mostrar modal
+    if (checkResult.allInstalled) {
+      return; // Continuar con la inicialización normalmente
+    }
+    
+    // Solo mostrar modal si faltan dependencias
+    modal.classList.remove('hidden');
+    
+    // Faltan dependencias
+    let html = '<h3 style="margin-bottom: 1rem;">Dependencias Faltantes:</h3>';
+    
+    if (!checkResult.pythonInstalled) {
+      html += `
+        <div class="dependency-item missing">
+          <span class="dependency-name">Python</span>
+          <span class="dependency-status status-missing">No instalado</span>
+        </div>
+      `;
+    }
+    
+    if (checkResult.pythonInstalled) {
+      checkResult.missingPackages.forEach(pkg => {
+        html += `
+          <div class="dependency-item missing">
+            <span class="dependency-name">${pkg}</span>
+            <span class="dependency-status status-missing">Falta</span>
+          </div>
+        `;
+      });
+    }
+    
+    dependenciesStatus.innerHTML = html;
+    footer.style.display = 'flex';
+    
+    installBtn.onclick = () => installDependencies();
+    skipBtn.onclick = () => modal.classList.add('hidden');
+  } catch (error) {
+    console.error('Error al verificar dependencias:', error);
+    // En caso de error, mostrar modal con opción de continuar
+    modal.classList.remove('hidden');
+    // Sanitizar mensaje de error para prevenir XSS
+    const sanitizedError = error.message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    dependenciesStatus.innerHTML = `
+      <div style="text-align: center; padding: 2rem;">
+        <div style="font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
+        <p>Error al verificar dependencias: ${sanitizedError}</p>
+      </div>
+    `;
+    footer.style.display = 'flex';
+    installBtn.style.display = 'none';
+    skipBtn.textContent = 'Continuar';
+    skipBtn.onclick = () => modal.classList.add('hidden');
+  }
+}
+
+// Instalar dependencias
+async function installDependencies() {
+  const dependenciesStatus = document.getElementById('dependencies-status');
+  const installBtn = document.getElementById('install-dependencies-btn');
+  const skipBtn = document.getElementById('skip-install-btn');
+  
+  installBtn.disabled = true;
+  installBtn.textContent = '⏳ Instalando...';
+  
+  // Configurar UI de progreso
+  dependenciesStatus.innerHTML = `
+    <h3 style="margin-bottom: 1rem;">Instalando dependencias...</h3>
+    <div class="install-progress">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+      </div>
+      <div class="progress-text" id="progress-text">Preparando...</div>
+    </div>
+  `;
+  
+  // Escuchar eventos de progreso
+  const progressHandler = (progress) => {
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    
+    if (progressFill) {
+      progressFill.style.width = `${progress.percentage}%`;
+    }
+    if (progressText) {
+      progressText.textContent = progress.message || 'Instalando...';
+    }
+  };
+  
+  // Configurar listener de progreso
+  window.electronAPI.onInstallProgress(progressHandler);
+  
+  try {
+    const result = await window.electronAPI.installDependencies();
+    
+    if (result.success) {
+      dependenciesStatus.innerHTML = `
+        <div style="text-align: center; padding: 2rem;">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
+          <h3 style="color: var(--success); margin-bottom: 0.5rem;">Instalación Completa</h3>
+          <p>Las dependencias se instalaron correctamente</p>
+        </div>
+      `;
+      
+      installBtn.disabled = false;
+      installBtn.textContent = 'Continuar';
+      installBtn.style.display = 'block';
+      installBtn.onclick = () => document.getElementById('dependencies-modal').classList.add('hidden');
+      skipBtn.style.display = 'none';
+    } else {
+      throw new Error(result.message || 'Error al instalar dependencias');
+    }
+  } catch (error) {
+    console.error('Error al instalar dependencias:', error);
+    
+    // Sanitizar mensaje de error para prevenir XSS
+    const sanitizedError = error.message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    dependenciesStatus.innerHTML = `
+      <div style="text-align: center; padding: 2rem;">
+        <div style="font-size: 2rem; margin-bottom: 1rem;">❌</div>
+        <h3 style="color: var(--error); margin-bottom: 0.5rem;">Error de Instalación</h3>
+        <p>${sanitizedError}</p>
+        <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-secondary);">
+          Puedes instalar manualmente ejecutando:<br>
+          <code>pip install -r requirements.txt</code>
+        </p>
+      </div>
+    `;
+    
+    installBtn.disabled = false;
+    installBtn.textContent = 'Reintentar';
+    installBtn.style.display = 'block';
+    installBtn.onclick = () => installDependencies();
+    skipBtn.style.display = 'block';
+  }
+}
 
 // Cargar dispositivos de audio
 async function loadAudioDevices() {
@@ -140,12 +291,14 @@ async function loadVoices() {
     } else {
       // Fallback a voces básicas si no se pueden cargar
       const fallbackVoices = [
-        { value: '21m00Tcm4TlvDq8ikWAM', text: 'Rachel (Femenina) - American' },
-        { value: 'EXAVITQu4vr4xnSDxMaL', text: 'Bella (Femenina) - American' },
-        { value: 'MF3mGyEYCl7XYWbV9V6O', text: 'Elli (Femenina) - American' },
-        { value: 'TxGEqnHWrfWFTfGW9XjX', text: 'Josh (Masculina) - American' },
-        { value: 'VR6AewLTigWG4xSOukaG', text: 'Arnold (Masculina) - American' },
-        { value: 'pNInz6obpgDQGcFmaJgB', text: 'Adam (Masculina) - American' }
+        { value: 'Xb7hH8MSUJpSbSDYk0k2', text: 'Alice (Femenina) - British' },
+        { value: 'EXAVITQu4vr4xnSDxMaL', text: 'Sarah (Femenina) - American' },
+        { value: 'cgSgspJ2msm6clMCkdW9', text: 'Jessica (Femenina) - American' },
+        { value: 'FGY2WhTYpPnrIDTdsKH5', text: 'Laura (Femenina) - American' },
+        { value: 'pFZP5JQG7iQjIQuC4Bku', text: 'Lily (Femenina) - British' },
+        { value: 'iP95p4xoKVk53GoZ742B', text: 'Chris (Masculina) - American' },
+        { value: 'onwK4e9ZLuTAKqWW03F9', text: 'Daniel (Masculina) - British' },
+        { value: 'CwhRBWXzGAHq8TQ4Fs17', text: 'Roger (Masculina) - American' }
       ];
       
       fallbackVoices.forEach(voice => {
@@ -209,16 +362,26 @@ async function saveSettings() {
     volume: volumeSlider.value,
     geminiKey: settingsGeminiKey.value,
     elevenlabsKey: settingsElevenlabsKey.value,
-    botPersonality: settingsBotPersonality.value
+    botPersonality: settingsBotPersonality.value,
+    iaCommand: settingsIACommand.value
   };
   
   localStorage.setItem('botConfig', JSON.stringify(config));
   addSystemLog('Configuracion guardada', 'success');
-  
-  // Si el bot está corriendo, actualizar API keys, personalidad y dispositivo de audio en tiempo real
+
+  // Si el bot está corriendo, actualizar API keys, personalidad, dispositivo de audio y volumen en tiempo real
   if (isRunning) {
     try {
-      const result = await window.electronAPI.updateApiKeys(config.geminiKey, config.elevenlabsKey, config.botPersonality, config.audioDevice);
+      const volumeValue = config.volume ? parseInt(config.volume) : 70;
+      
+      const result = await window.electronAPI.updateApiKeys(
+        config.geminiKey || undefined, 
+        config.elevenlabsKey || undefined, 
+        config.botPersonality || undefined, 
+        config.audioDevice || undefined,
+        volumeValue,
+        config.iaCommand || undefined
+      );
       if (result.status === 'success') {
         addSystemLog('Configuracion actualizada en tiempo real', 'success');
       }
@@ -309,11 +472,23 @@ function setupAutoSave() {
   voiceSelect.addEventListener('change', saveMainFormData);
   
   // Guardar datos de configuración
-  settingsAudioDevice.addEventListener('change', () => {
+  settingsAudioDevice.addEventListener('change', async () => {
     const config = JSON.parse(localStorage.getItem('botConfig') || '{}');
     config.audioDevice = settingsAudioDevice.value;
     localStorage.setItem('botConfig', JSON.stringify(config));
     showAutoSaveIndicator();
+    
+    // Si el bot está corriendo, actualizar dispositivo de audio en tiempo real
+    if (isRunning) {
+      try {
+        const result = await window.electronAPI.updateApiKeys(undefined, undefined, undefined, config.audioDevice);
+        if (result.status === 'success') {
+          addSystemLog('Dispositivo de audio actualizado en tiempo real', 'success');
+        }
+      } catch (error) {
+        console.log('Error al actualizar dispositivo de audio:', error);
+      }
+    }
   });
   
   voiceSelect.addEventListener('change', async () => {
@@ -335,12 +510,24 @@ function setupAutoSave() {
     }
   });
   
-  volumeSlider.addEventListener('input', () => {
+  volumeSlider.addEventListener('input', async () => {
     const config = JSON.parse(localStorage.getItem('botConfig') || '{}');
     config.volume = volumeSlider.value;
     localStorage.setItem('botConfig', JSON.stringify(config));
     volumeValue.textContent = `${volumeSlider.value}%`;
     showAutoSaveIndicator();
+    
+    // Si el bot está corriendo, actualizar volumen en tiempo real
+    if (isRunning) {
+      try {
+        const result = await window.electronAPI.updateApiKeys(undefined, undefined, undefined, undefined, config.volume);
+        if (result.status === 'success') {
+          console.log(`Volumen actualizado a ${config.volume}%`);
+        }
+      } catch (error) {
+        console.error('Error al actualizar volumen:', error);
+      }
+    }
   });
   
   settingsGeminiKey.addEventListener('input', () => {
@@ -363,6 +550,13 @@ function setupAutoSave() {
     localStorage.setItem('botConfig', JSON.stringify(config));
     showAutoSaveIndicator();
   });
+  
+  settingsIACommand.addEventListener('input', () => {
+    const config = JSON.parse(localStorage.getItem('botConfig') || '{}');
+    config.iaCommand = settingsIACommand.value;
+    localStorage.setItem('botConfig', JSON.stringify(config));
+    showAutoSaveIndicator();
+  });
 }
 
 // Cargar configuracion
@@ -377,6 +571,7 @@ function loadSettings() {
     settingsGeminiKey.value = config.geminiKey || '';
     settingsElevenlabsKey.value = config.elevenlabsKey || '';
     settingsBotPersonality.value = config.botPersonality || '';
+    settingsIACommand.value = config.iaCommand || '!IA';
   }
 }
 
@@ -391,6 +586,7 @@ function resetSettings() {
   settingsGeminiKey.value = '';
   settingsElevenlabsKey.value = '';
   settingsBotPersonality.value = '';
+  settingsIACommand.value = '!IA';
   
   // También limpiar formulario principal
   channelInput.value = '';
@@ -404,7 +600,6 @@ function setupEventListeners() {
   // Botones de navegacion
   if (settingsBtn) {
     settingsBtn.addEventListener('click', () => {
-      console.log('Botón de configuración clickeado');
       showSettingsView();
     });
   }
@@ -446,19 +641,10 @@ function setupEventListeners() {
     });
   }
   
-  // Actualizar valor del volumen
-  volumeSlider.addEventListener('input', (e) => {
-    volumeValue.textContent = `${e.target.value}%`;
-  });
-  
   // Botón de inicio
   startBtn.addEventListener('click', async () => {
     const channel = channelInput.value.trim();
     const token = tokenInput.value.trim();
-    
-    // Obtener configuracion guardada
-    const savedConfig = localStorage.getItem('botConfig');
-    const audioDevice = savedConfig ? JSON.parse(savedConfig).audioDevice : '';
     
     if (!channel) {
       addSystemLog('Por favor, ingresa un nombre de canal', 'error');
@@ -497,12 +683,15 @@ function setupEventListeners() {
       // Obtener configuración guardada
       const savedConfig = localStorage.getItem('botConfig');
       const config = savedConfig ? JSON.parse(savedConfig) : {};
+      const audioDevice = config.audioDevice || '';
       const voice = config.voice || '21m00Tcm4TlvDq8ikWAM';
+      const volume = config.volume || 70;
       const geminiKey = config.geminiKey || '';
       const elevenlabsKey = config.elevenlabsKey || '';
       const botPersonality = config.botPersonality || '';
+      const iaCommand = config.iaCommand || '!IA';
       
-      const result = await window.electronAPI.startBot(channel, token, audioDevice, voice, geminiKey, elevenlabsKey, botPersonality);
+      const result = await window.electronAPI.startBot(channel, token, audioDevice, voice, volume, geminiKey, elevenlabsKey, botPersonality, iaCommand);
       
       if (result.status === 'success') {
         addSystemLog(`Bot conectado al canal: ${channel}`, 'success');
@@ -626,9 +815,23 @@ function processBotOutput(data) {
 
   // Intentar parsear mensajes de chat
   if (type === 'info' && message.includes(':')) {
-    // Ignorar mensajes del sistema
-    const systemPatterns = /^(Conectando|Conectado|═|║|╔|╚|Leyendo|Deteniendo|Bot|Hora|Modo|📊|🤖|🕐|\[DEBUG\]|\[IA\])/;
-    if (!systemPatterns.test(message)) {
+    // Filtros mejorados para ignorar mensajes del sistema
+    const systemPatterns = [
+      /^(Conectando|Conectado|═|║|╔|╚|Leyendo|Deteniendo|Bot|Hora|Modo|📊|🤖|🕐|\[DEBUG\]|\[IA\]|\[MEMORIA\]|\[TTS\]|\[AUDIO\]|\[CMD\])/,  // Prefijos de sistema
+      /Archivo temporal creado/,  // Mensajes de archivos
+      /Intentando reproducir/,  // Mensajes de reproducción
+      /Dispositivo actualizado/,  // Mensajes de dispositivo
+      /Configuracion/,  // Mensajes de configuración
+      /Audio cargado/,  // Mensajes de audio
+      /Dispositivo seleccionado/,  // Mensajes de dispositivo
+      /Cargando audio/,  // Mensajes de carga
+      /Audio reproducido/  // Mensajes de reproducción
+    ];
+    
+    // Verificar si es mensaje del sistema
+    const isSystemMessage = systemPatterns.some(pattern => pattern.test(message));
+    
+    if (!isSystemMessage) {
       parseChatMessage(message);
     }
   }
@@ -730,6 +933,14 @@ function addChatMessage(username, message, badges = '', color = '', isCommand = 
   chatDisplay.scrollTop = chatDisplay.scrollHeight;
 }
 
+// FUNCIÓN GLOBAL DE SANITIZACIÓN PARA PREVENIR XSS
+function sanitizeHTML(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 // Manejar respuestas de IA
 function handleIAResponse(data) {
   const { username, question, response } = data;
@@ -747,8 +958,8 @@ function handleIAResponse(data) {
   logEl.innerHTML = `
     <div style="font-weight: bold; color: #9b59b6;">[${timestamp}] 🤖 IA RESPUESTA</div>
     <div style="margin-left: 1rem; margin-top: 0.25rem;">
-      <div style="color: #8e44ad;">👤 ${username} preguntó: ${question}</div>
-      <div style="color: #9b59b6; margin-top: 0.25rem;">💬 Respuesta: ${response}</div>
+      <div style="color: #8e44ad;">👤 ${sanitizeHTML(username)} preguntó: ${sanitizeHTML(question)}</div>
+      <div style="color: #9b59b6; margin-top: 0.25rem;">💬 Respuesta: ${sanitizeHTML(response)}</div>
     </div>
   `;
   
@@ -763,8 +974,8 @@ function handleIAResponse(data) {
   messageEl.style.padding = '0.5rem';
   
   messageEl.innerHTML = `
-    <div style="color: #9b59b6; font-weight: bold;">🤖 IA respondiendo a ${username}:</div>
-    <div style="color: #ecf0f1; margin-top: 0.25rem;">${response}</div>
+    <div style="color: #9b59b6; font-weight: bold;">🤖 IA respondiendo a ${sanitizeHTML(username)}:</div>
+    <div style="color: #ecf0f1; margin-top: 0.25rem;">${sanitizeHTML(response)}</div>
   `;
   
   chatDisplay.appendChild(messageEl);

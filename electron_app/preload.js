@@ -4,8 +4,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Iniciar el bot con el canal, token, dispositivo de audio, voz, API keys y personalidad
-  startBot: (channel, token, audioDevice, voice, geminiKey, elevenlabsKey, botPersonality) => ipcRenderer.invoke('start-bot', channel, token, audioDevice, voice, geminiKey, elevenlabsKey, botPersonality),
+  // Iniciar el bot con el canal, token, dispositivo de audio, voz, volumen, API keys, personalidad y comando de IA
+  startBot: (channel, token, audioDevice, voice, volume, geminiKey, elevenlabsKey, botPersonality, iaCommand) => ipcRenderer.invoke('start-bot', channel, token, audioDevice, voice, volume, geminiKey, elevenlabsKey, botPersonality, iaCommand),
 
   // Listar dispositivos de audio
   listAudioDevices: () => ipcRenderer.invoke('list-audio-devices'),
@@ -19,11 +19,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Verificar estado del bot
   checkBotStatus: () => ipcRenderer.invoke('check-bot-status'),
 
+  // Verificar dependencias
+  checkDependencies: () => ipcRenderer.invoke('check-dependencies'),
+
+  // Instalar dependencias
+  installDependencies: () => ipcRenderer.invoke('install-dependencies'),
+
+  // Escuchar progreso de instalación
+  onInstallProgress: (callback) => {
+    ipcRenderer.on('install-progress', (event, data) => {
+      callback(data);
+    });
+  },
+
   // Cambiar voz en tiempo real
   changeVoice: (voiceId) => ipcRenderer.invoke('change-voice', voiceId),
 
-  // Actualizar API Keys, personalidad y dispositivo de audio en tiempo real
-  updateApiKeys: (geminiKey, elevenlabsKey, botPersonality, audioDevice) => ipcRenderer.invoke('update-api-keys', geminiKey, elevenlabsKey, botPersonality, audioDevice),
+  // Actualizar API Keys, personalidad, dispositivo de audio, volumen y comando de IA en tiempo real
+  updateApiKeys: (geminiKey, elevenlabsKey, botPersonality, audioDevice, volume, iaCommand) => ipcRenderer.invoke('update-api-keys', geminiKey, elevenlabsKey, botPersonality, audioDevice, volume, iaCommand),
 
   // Escuchar salida del bot
   onBotOutput: (callback) => {

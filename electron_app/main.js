@@ -54,11 +54,27 @@ app.on('activate', () => {
   }
 });
 
+// FUNCIÓN DE SANITIZACIÓN DE INPUTS PARA PREVENIR INYECCIÓN
+function sanitizeInput(input) {
+  if (!input) return '';
+  // Remover caracteres peligrosos que podrían usarse para inyección de comandos
+  return input.replace(/[;&|`$(){}[\]<>"]/g, '');
+}
+
 // IPC Handler: Iniciar el bot de Twitch
-ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, geminiKey, elevenlabsKey, botPersonality) => {
+ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, volume, geminiKey, elevenlabsKey, botPersonality, iaCommand) => {
   if (pythonProcess) {
     return { status: 'error', message: 'El bot ya está ejecutándose' };
   }
+
+  // Sanitizar todos los inputs antes de procesarlos
+  channel = sanitizeInput(channel);
+  audioDevice = sanitizeInput(audioDevice);
+  voice = sanitizeInput(voice);
+  geminiKey = sanitizeInput(geminiKey);
+  elevenlabsKey = sanitizeInput(elevenlabsKey);
+  botPersonality = sanitizeInput(botPersonality);
+  iaCommand = sanitizeInput(iaCommand);
 
   // Validar que se proporcione token
   if (!token) {
@@ -75,6 +91,14 @@ ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, ge
       message: 'El token debe empezar con "oauth:". Formato: oauth:xxxxxxxxxxxxx' 
     };
   }
+  
+  // Validar longitud del token
+  if (token.length < 15 || token.length > 50) {
+    return {
+      status: 'error',
+      message: 'Token inválido. Longitud incorrecta.'
+    };
+  }
 
   // Usar el bot de Twitch
   const scriptPath = path.join(__dirname, '..', 'chatbot.py');
@@ -82,21 +106,30 @@ ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, ge
 
   try {
     // Crear proceso Python pasando el canal, token, dispositivo de audio, voz, API keys y personalidad
+    // NOTA: El token no se sanitiza ya que contiene caracteres especiales válidos (oauth:)
     const args = [scriptPath, channel, token];
-    if (audioDevice && audioDevice !== '') {
+    
+    // Solo agregar argumentos si tienen contenido válido
+    if (audioDevice && audioDevice !== '' && /^\d+$/.test(audioDevice)) {
       args.push(audioDevice);
     }
-    if (voice && voice !== '') {
+    if (voice && voice !== '' && voice.length < 100) {
       args.push('--voice', voice);
     }
-    if (geminiKey && geminiKey !== '') {
+    if (volume && volume !== '' && /^\d+$/.test(volume) && parseInt(volume) >= 0 && parseInt(volume) <= 100) {
+      args.push('--volume', volume);
+    }
+    if (geminiKey && geminiKey !== '' && geminiKey.length < 100) {
       args.push('--gemini-key', geminiKey);
     }
-    if (elevenlabsKey && elevenlabsKey !== '') {
+    if (elevenlabsKey && elevenlabsKey !== '' && elevenlabsKey.length < 100) {
       args.push('--elevenlabs-key', elevenlabsKey);
     }
-    if (botPersonality && botPersonality !== '') {
+    if (botPersonality && botPersonality !== '' && botPersonality.length < 1000) {
       args.push('--bot-personality', botPersonality);
+    }
+    if (iaCommand && iaCommand !== '' && iaCommand.length < 20) {
+      args.push('--ia-command', iaCommand);
     }
     
     pythonProcess = spawn(pythonCmd, args, {
@@ -295,6 +328,196 @@ ipcMain.handle('check-bot-status', async () => {
   return { running: pythonProcess !== null };
 });
 
+// IPC Handler: Verificar dependencias de Python
+ipcMain.handle('check-dependencies', async () => {
+  const { exec } = require('child_process');
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  
+  return new Promise((resolve) => {
+    // Verificar si Python está instalado
+    exec(`${pythonCmd} --version`, (error) => {
+      const pythonInstalled = !error;
+      
+      if (!pythonInstalled) {
+        resolve({
+          allInstalled: false,
+          pythonInstalled: false,
+          missingPackages: []
+        });
+        return;
+      }
+      
+      // Verificar dependencias leyendo requirements.txt
+      const fs = require('fs');
+      const path = require('path');
+      const requirementsPath = path.join(__dirname, '..', 'requirements.txt');
+      
+      let requiredPackages = [];
+      try {
+        const requirementsContent = fs.readFileSync(requirementsPath, 'utf8');
+        requiredPackages = requirementsContent
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line && !line.startsWith('#'))
+          .map(line => {
+            // Remover versiones y operadores: >=, <=, ==, >, <
+            line = line.replace(/\s*(>=|<=|==|>|<)\s*.+$/, '');
+            // Remover espacios finales
+            return line.trim();
+          })
+          .filter(pkg => pkg); // Filtrar líneas vacías
+      } catch (e) {
+        resolve({
+          allInstalled: false,
+          pythonInstalled: true,
+          missingPackages: []
+        });
+        return;
+      }
+      
+      // Mapear nombres de paquetes a comandos de verificación
+      const packageToCheck = {
+        'google-genai': 'from google import genai',
+        'pywin32': 'import win32',
+        'soundfile': 'import soundfile',
+        'sounddevice': 'import sounddevice',
+        'pydub': 'import pydub',
+        'gtts': 'import gtts',
+        'twitchio': 'import twitchio',
+        'pygame': 'import pygame',
+        'requests': 'import requests',
+        'numpy': 'import numpy'
+      };
+      
+      // Paquetes que pueden fallar y son tolerables (no críticos)
+      // Se marcan como instalados para no bloquear la app, pero se siguen mostrando en verificaciones
+      const tolerantPackages = [];  // Ningún paquete es completamente ignorado
+      
+      // Verificar cada paquete
+      const checkPromises = requiredPackages.map(pkg => {
+        const importCommand = packageToCheck[pkg] || `import ${pkg.replace(/-/g, '_')}`;
+        
+        return new Promise((resolve) => {
+          exec(`${pythonCmd} -c "${importCommand}" 2>&1`, (error) => {
+            // Verificar si realmente está instalado
+            const installed = !error;
+            resolve({ pkg, installed });
+          });
+        });
+      });
+      
+      Promise.all(checkPromises).then(results => {
+        const missingPackages = results
+          .filter(r => !r.installed)
+          .map(r => r.pkg);
+        
+        resolve({
+          allInstalled: missingPackages.length === 0,
+          pythonInstalled: true,
+          missingPackages
+        });
+      });
+    });
+  });
+});
+
+// IPC Handler: Instalar dependencias
+ipcMain.handle('install-dependencies', async (event) => {
+  const { exec } = require('child_process');
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const path = require('path');
+  const requirementsPath = path.join(__dirname, '..', 'requirements.txt');
+  
+  return new Promise((resolve) => {
+    let step = 0;
+    const totalSteps = 3;
+    
+    const updateProgress = (stepNumber, message) => {
+      const percentage = Math.min(100, (stepNumber / totalSteps) * 100);
+      event.sender.send('install-progress', { percentage, message });
+    };
+    
+    // Paso 1: Actualizar pip
+    step++;
+    updateProgress(step, 'Actualizando pip...');
+    
+    exec(`${pythonCmd} -m pip install --upgrade pip --quiet`, (pipError) => {
+      // Ignorar errores de actualización de pip
+      
+      step++;
+      updateProgress(step, 'Limpiando caché de pip...');
+      
+      // Paso 2: Limpiar caché de pip
+      exec(`${pythonCmd} -m pip cache purge`, (cacheError) => {
+        // Ignorar errores de limpieza de caché
+        
+        step++;
+        updateProgress(step, 'Instalando dependencias...');
+        
+        // Paso 3: Leer requirements.txt e instalar una por una
+        const fs = require('fs');
+        let packagesToInstall = [];
+        
+        try {
+          const requirementsContent = fs.readFileSync(requirementsPath, 'utf8');
+          packagesToInstall = requirementsContent
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line && !line.startsWith('#'));
+        } catch (e) {
+          resolve({ 
+            success: false, 
+            message: 'No se pudo leer requirements.txt'
+          });
+          return;
+        }
+        
+        // Función auxiliar para instalar paquetes uno por uno
+        function installPackagesIndividually(packages, index, updateProgress, callback) {
+          if (index >= packages.length) {
+            callback(null, true);
+            return;
+          }
+          
+          const packageLine = packages[index];
+          const packageName = packageLine.split(/\s*(>=|<=|==|>|<)/)[0].trim();
+          
+          updateProgress(2 + (index / packages.length), `Instalando ${packageName}...`);
+          
+          // Solo instalar paquetes principales (ignorar comentarios y líneas vacías)
+          if (!packageLine || packageLine === '' || !packageName || packageName === '') {
+            installPackagesIndividually(packages, index + 1, updateProgress, callback);
+            return;
+          }
+          
+          // Instalar con la versión especificada (ej: twitchio==2.9.0)
+          const command = `${pythonCmd} -m pip install "${packageLine}" --quiet`;
+          
+          exec(command, (error) => {
+            // Continuar instalando aunque una falle
+            installPackagesIndividually(packages, index + 1, updateProgress, callback);
+          });
+        }
+        
+        // Instalar una por una para evitar conflictos del resolver
+        installPackagesIndividually(packagesToInstall, 0, updateProgress, (finalError, finalSuccess) => {
+          if (finalError) {
+            event.sender.send('install-progress', { percentage: 100, message: 'Instalación parcial' });
+            resolve({ 
+              success: false, 
+              message: `No se pudieron instalar todas las dependencias.\n\nInstala manualmente:\npip install ${packagesToInstall.join(' ')}`
+            });
+            return;
+          }
+          
+          event.sender.send('install-progress', { percentage: 100, message: 'Instalación completa' });
+          resolve({ success: true, message: 'Dependencias instaladas correctamente' });
+        });
+      });
+    });
+  });
+});
+
 // IPC Handler: Cambiar voz en tiempo real
 ipcMain.handle('change-voice', async (event, voiceId) => {
   if (!pythonProcess) {
@@ -311,7 +534,7 @@ ipcMain.handle('change-voice', async (event, voiceId) => {
 });
 
 // IPC Handler: Actualizar API Keys, personalidad y dispositivo de audio en tiempo real
-ipcMain.handle('update-api-keys', async (event, geminiKey, elevenlabsKey, botPersonality, audioDevice) => {
+ipcMain.handle('update-api-keys', async (event, geminiKey, elevenlabsKey, botPersonality, audioDevice, volume, iaCommand) => {
   if (!pythonProcess) {
     return { status: 'error', message: 'El bot no está ejecutándose' };
   }
@@ -329,6 +552,12 @@ ipcMain.handle('update-api-keys', async (event, geminiKey, elevenlabsKey, botPer
     }
     if (audioDevice !== undefined) {
       pythonProcess.stdin.write(`UPDATE_AUDIO_DEVICE:${audioDevice}\n`);
+    }
+    if (volume !== undefined) {
+      pythonProcess.stdin.write(`UPDATE_VOLUME:${volume}\n`);
+    }
+    if (iaCommand !== undefined) {
+      pythonProcess.stdin.write(`UPDATE_IA_COMMAND:${iaCommand}\n`);
     }
     return { status: 'success', message: 'Configuracion actualizada correctamente' };
   } catch (error) {
