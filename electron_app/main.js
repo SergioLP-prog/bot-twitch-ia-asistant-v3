@@ -8,6 +8,102 @@ const { spawn } = require('child_process');
 let mainWindow = null;
 let pythonProcess = null;
 
+// Función helper para obtener la ruta correcta de chatbot.py
+function getChatbotPath() {
+  const fs = require('fs');
+  
+  // En desarrollo, __dirname apunta a electron_app/
+  // En producción:
+  // - __dirname apunta a resources/app.asar/main.js (dentro del asar)
+  // - app.getAppPath() apunta al directorio de la app
+  // - process.resourcesPath apunta a resources/
+  
+  // Intentar ruta de desarrollo primero
+  const devPath = path.join(__dirname, '..', 'chatbot.py');
+  if (fs.existsSync(devPath)) {
+    return devPath;
+  }
+  
+  // En producción: extraFiles se coloca en la raíz de la app instalada
+  const appPath = app.getAppPath();
+  const packagedPath = path.join(appPath, '..', '..', 'chatbot.py');
+  if (fs.existsSync(packagedPath)) {
+    return packagedPath;
+  }
+  
+  // Alternativa: buscar desde process.resourcesPath
+  const resourcesPath = process.resourcesPath || __dirname;
+  const resourcesRootPath = path.join(resourcesPath, '..', 'chatbot.py');
+  if (fs.existsSync(resourcesRootPath)) {
+    return resourcesRootPath;
+  }
+  
+  // Fallback: intentar en app.asar.unpacked
+  const unpackedPath = path.join(resourcesPath, '..', 'resources', 'app.asar.unpacked', 'chatbot.py');
+  if (fs.existsSync(unpackedPath)) {
+    return unpackedPath;
+  }
+  
+  return devPath; // Devolver la ruta predeterminada si nada funciona
+}
+
+// Función helper para obtener la ruta de Python (embebido o del sistema)
+function getPythonPath() {
+  const fs = require('fs');
+  const os = require('os');
+  
+  // Rutas a verificar en orden de prioridad
+  const pythonPaths = [];
+  
+  // 1. Python embebido en la raíz de la app instalada (desde extraFiles, copiado como "python")
+  const appPath = app.getAppPath();
+  const rootPythonPath = path.join(appPath, '..', '..', 'python', 'python.exe');
+  pythonPaths.push(rootPythonPath);
+  
+  // 2. Python embebido en desarrollo (electron_app/python_embebido) - solo en desarrollo
+  // Solo verificar si no estamos dentro de app.asar
+  if (!__dirname.includes('app.asar')) {
+    const devEmbeddedPath = path.join(__dirname, 'python_embebido', 'python.exe');
+    pythonPaths.push(devEmbeddedPath);
+  }
+  
+  // 3. Python embebido en app.asar.unpacked (cuando está empaquetado)
+  const unpackedPythonPath = path.join(__dirname, '..', '..', '..', 'resources', 'app.asar.unpacked', 'python', 'python.exe');
+  pythonPaths.push(unpackedPythonPath);
+  
+  // 4. Python embebido relativo desde process.resourcesPath
+  if (process.resourcesPath) {
+    pythonPaths.push(path.join(process.resourcesPath, 'app.asar.unpacked', 'python', 'python.exe'));
+    pythonPaths.push(path.join(process.resourcesPath, '..', 'python', 'python.exe'));
+  }
+  
+  // Verificar todas las rutas en orden
+  for (const pythonPath of pythonPaths) {
+    if (fs.existsSync(pythonPath)) {
+      return pythonPath;
+    }
+  }
+  
+  // Fallback: buscar Python en rutas comunes de instalación del sistema
+  const commonPaths = [
+    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
+    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python.exe'),
+    path.join('C:', 'Program Files', 'Python312', 'python.exe'),
+    path.join('C:', 'Program Files', 'Python311', 'python.exe'),
+    path.join('C:', 'Program Files (x86)', 'Python312', 'python.exe'),
+    path.join('C:', 'Program Files (x86)', 'Python311', 'python.exe')
+  ];
+  
+  for (const pythonPath of commonPaths) {
+    if (fs.existsSync(pythonPath)) {
+      return pythonPath;
+    }
+  }
+  
+  // Último fallback: usar 'python' del PATH del sistema
+  return process.platform === 'win32' ? 'python' : 'python3';
+}
+
 // Crea la ventana principal
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -28,8 +124,12 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // Abrir DevTools en modo desarrollo
-  // mainWindow.webContents.openDevTools();
+  // Atajo de teclado: Ctrl+Shift+I o Ctrl+Shift+J para abrir/cerrar DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.control && input.shift && (input.key.toLowerCase() === 'i' || input.key.toLowerCase() === 'j')) {
+      mainWindow.webContents.toggleDevTools();
+    }
+  });
 
   mainWindow.on('closed', () => {
     // Detener el proceso Python si está ejecutándose
@@ -101,8 +201,8 @@ ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, vo
   }
 
   // Usar el bot de Twitch
-  const scriptPath = path.join(__dirname, '..', 'chatbot.py');
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const scriptPath = getChatbotPath();
+  const pythonCmd = getPythonPath();
 
   try {
     // Crear proceso Python pasando el canal, token, dispositivo de audio, voz, API keys y personalidad
@@ -211,8 +311,8 @@ ipcMain.handle('start-bot', async (event, channel, token, audioDevice, voice, vo
 
 // IPC Handler: Listar dispositivos de audio
 ipcMain.handle('list-audio-devices', async () => {
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-  const scriptPath = path.join(__dirname, '..', 'chatbot.py');
+  const pythonCmd = getPythonPath();
+  const scriptPath = getChatbotPath();
   
   return new Promise((resolve, reject) => {
     const { spawn } = require('child_process');
@@ -257,8 +357,8 @@ ipcMain.handle('list-audio-devices', async () => {
 
 // IPC Handler: Listar voces de ElevenLabs
 ipcMain.handle('list-voices', async (event, elevenlabsKey) => {
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-  const scriptPath = path.join(__dirname, '..', 'chatbot.py');
+  const pythonCmd = getPythonPath();
+  const scriptPath = getChatbotPath();
   
   return new Promise((resolve, reject) => {
     const { spawn } = require('child_process');
@@ -331,7 +431,7 @@ ipcMain.handle('check-bot-status', async () => {
 // IPC Handler: Verificar dependencias de Python
 ipcMain.handle('check-dependencies', async () => {
   const { exec } = require('child_process');
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const pythonCmd = getPythonPath();
   
   return new Promise((resolve) => {
     // Verificar si Python está instalado
@@ -350,7 +450,24 @@ ipcMain.handle('check-dependencies', async () => {
       // Verificar dependencias leyendo requirements.txt
       const fs = require('fs');
       const path = require('path');
-      const requirementsPath = path.join(__dirname, '..', 'requirements.txt');
+      
+      // Intentar ruta de desarrollo
+      let requirementsPath = path.join(__dirname, '..', 'requirements.txt');
+      
+      // Si no existe en desarrollo, buscar en producción
+      if (!fs.existsSync(requirementsPath)) {
+        const appPath = app.getAppPath();
+        const packagedPath = path.join(appPath, '..', '..', 'requirements.txt');
+        if (fs.existsSync(packagedPath)) {
+          requirementsPath = packagedPath;
+        } else {
+          const resourcesPath = process.resourcesPath || __dirname;
+          const resourcesRootPath = path.join(resourcesPath, '..', 'requirements.txt');
+          if (fs.existsSync(resourcesRootPath)) {
+            requirementsPath = resourcesRootPath;
+          }
+        }
+      }
       
       let requiredPackages = [];
       try {
@@ -424,9 +541,26 @@ ipcMain.handle('check-dependencies', async () => {
 // IPC Handler: Instalar dependencias
 ipcMain.handle('install-dependencies', async (event) => {
   const { exec } = require('child_process');
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const pythonCmd = getPythonPath();
+  const fs = require('fs');
   const path = require('path');
-  const requirementsPath = path.join(__dirname, '..', 'requirements.txt');
+  
+  // Buscar requirements.txt en diferentes ubicaciones
+  let actualPath = path.join(__dirname, '..', 'requirements.txt');
+  
+  if (!fs.existsSync(actualPath)) {
+    const appPath = app.getAppPath();
+    const packagedPath = path.join(appPath, '..', '..', 'requirements.txt');
+    if (fs.existsSync(packagedPath)) {
+      actualPath = packagedPath;
+    } else {
+      const resourcesPath = process.resourcesPath || __dirname;
+      const resourcesRootPath = path.join(resourcesPath, '..', 'requirements.txt');
+      if (fs.existsSync(resourcesRootPath)) {
+        actualPath = resourcesRootPath;
+      }
+    }
+  }
   
   return new Promise((resolve) => {
     let step = 0;
@@ -434,7 +568,11 @@ ipcMain.handle('install-dependencies', async (event) => {
     
     const updateProgress = (stepNumber, message) => {
       const percentage = Math.min(100, (stepNumber / totalSteps) * 100);
-      event.sender.send('install-progress', { percentage, message });
+      // Verificar que la ventana no esté destruida antes de enviar
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send('install-progress', { percentage, message });
     };
     
     // Paso 1: Actualizar pip
@@ -455,11 +593,10 @@ ipcMain.handle('install-dependencies', async (event) => {
         updateProgress(step, 'Instalando dependencias...');
         
         // Paso 3: Leer requirements.txt e instalar una por una
-        const fs = require('fs');
         let packagesToInstall = [];
         
         try {
-          const requirementsContent = fs.readFileSync(requirementsPath, 'utf8');
+          const requirementsContent = fs.readFileSync(actualPath, 'utf8');
           packagesToInstall = requirementsContent
             .split('\n')
             .map(line => line.trim())
@@ -502,7 +639,9 @@ ipcMain.handle('install-dependencies', async (event) => {
         // Instalar una por una para evitar conflictos del resolver
         installPackagesIndividually(packagesToInstall, 0, updateProgress, (finalError, finalSuccess) => {
           if (finalError) {
-            event.sender.send('install-progress', { percentage: 100, message: 'Instalación parcial' });
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('install-progress', { percentage: 100, message: 'Instalación parcial' });
+            }
             resolve({ 
               success: false, 
               message: `No se pudieron instalar todas las dependencias.\n\nInstala manualmente:\npip install ${packagesToInstall.join(' ')}`
@@ -510,7 +649,9 @@ ipcMain.handle('install-dependencies', async (event) => {
             return;
           }
           
-          event.sender.send('install-progress', { percentage: 100, message: 'Instalación completa' });
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('install-progress', { percentage: 100, message: 'Instalación completa' });
+          }
           resolve({ success: true, message: 'Dependencias instaladas correctamente' });
         });
       });

@@ -1,17 +1,107 @@
 {
-  "name": "twitch-bot-reader",
+  "name": "bot-twitch-ia-assistant",
+  "productName": "Bot Twitch IA Assistant",
   "version": "1.0.0",
-  "description": "Lector de Chat de Twitch con Interfaz Electron",
+  "description": "Bot de Twitch con IA y TTS - Interfaz Electron",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
   },
-  "keywords": ["twitch", "chat", "bot", "electron"],
-  "author": "",
+  "keywords": [
+    "twitch",
+    "chat",
+    "bot",
+    "electron",
+    "ai",
+    "tts"
+  ],
+  "author": "Your Name",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^38.2.2"
+    "electron": "^38.2.2",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.twitchbot.iaassistant",
+    "productName": "Bot Twitch IA Assistant",
+    "directories": {
+      "output": "dist"
+    },
+    "extraFiles": [
+      {
+        "from": "../chatbot.py",
+        "to": "chatbot.py"
+      },
+      {
+        "from": "../requirements.txt",
+        "to": "requirements.txt"
+      },
+      {
+        "from": "../uninstall_dependencies.bat",
+        "to": "uninstall_dependencies.bat"
+      },
+      {
+        "from": "python_embebido",
+        "to": "python",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "install-python-deps.bat",
+        "to": "install-python-deps.bat"
+      },
+      {
+        "from": "install-deps-silent.bat",
+        "to": "install-deps-silent.bat"
+      }
+    ],
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "forceCodeSigning": false,
+    "asarUnpack": [
+      "**/*.py",
+      "**/*.txt",
+      "**/*.bat",
+      "install-python-deps.bat",
+      "install-deps-silent.bat",
+      "uninstall_dependencies.bat"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Bot Twitch IA Assistant",
+      "include": "installer.nsh"
+    }
   }
 }
-

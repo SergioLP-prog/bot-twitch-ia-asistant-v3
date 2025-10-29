@@ -468,7 +468,41 @@ window.addEventListener('unload', saveOnClose);
 function setupAutoSave() {
   // Guardar datos del formulario principal
   channelInput.addEventListener('input', saveMainFormData);
-  tokenInput.addEventListener('input', saveMainFormData);
+  
+  // Agregar automáticamente "oauth:" al token si no lo tiene
+  tokenInput.addEventListener('input', (e) => {
+    let value = e.target.value;
+    const cursorPos = e.target.selectionStart;
+    
+    // Si tiene contenido y no empieza con "oauth:" (case-insensitive)
+    if (value && !value.toLowerCase().startsWith('oauth:')) {
+      // Remover cualquier "oauth:" duplicado
+      value = value.replace(/^oauth:*/i, '');
+      
+      // Agregar "oauth:" al inicio
+      const newValue = 'oauth:' + value;
+      e.target.value = newValue;
+      
+      // Mantener posición del cursor (ajustar por los caracteres agregados)
+      const newCursorPos = Math.min(cursorPos + 6, newValue.length);
+      e.target.setSelectionRange(newCursorPos, newCursorPos);
+      
+      saveMainFormData();
+    } else {
+      saveMainFormData();
+    }
+  });
+  
+  // Al perder el foco, asegurar que tenga "oauth:" si tiene contenido
+  tokenInput.addEventListener('blur', (e) => {
+    let value = e.target.value.trim();
+    if (value && !value.toLowerCase().startsWith('oauth:')) {
+      value = value.replace(/^oauth:*/i, '');
+      e.target.value = 'oauth:' + value;
+      saveMainFormData();
+    }
+  });
+  
   voiceSelect.addEventListener('change', saveMainFormData);
   
   // Guardar datos de configuración
@@ -810,27 +844,51 @@ function processBotOutput(data) {
     return;
   }
 
+  // Manejar mensajes de chat directamente (si vienen estructurados desde Python)
+  if (type === 'chat' && data.username && data.message) {
+    messageCount++;
+    const isCommand = data.is_command || data.message.startsWith('!');
+    if (isCommand) {
+      commandCount++;
+    }
+    updateStats();
+    
+    const badges = data.badges ? data.badges.join(',') : '';
+    const color = data.color || '';
+    
+    addChatMessage(data.username, data.message, badges, color, isCommand);
+    return;
+  }
+
   // Agregar a logs del sistema
   addSystemLog(message, type);
 
-  // Intentar parsear mensajes de chat
-  if (type === 'info' && message.includes(':')) {
-    // Filtros mejorados para ignorar mensajes del sistema
+  // Manejar mensaje de inicio del bot en el chat en vivo
+  if (type === 'info' && message.includes('Iniciando bot para el canal:')) {
+    const channelMatch = message.match(/Iniciando bot para el canal:\s*(.+)/);
+    if (channelMatch && chatDisplay) {
+      const channelName = channelMatch[1].trim();
+      const systemMsgEl = document.createElement('div');
+      systemMsgEl.className = 'chat-message system-message';
+      systemMsgEl.style.opacity = '0.7';
+      systemMsgEl.style.fontStyle = 'italic';
+      systemMsgEl.textContent = `🟢 Iniciando bot para el canal: ${channelName}`;
+      chatDisplay.appendChild(systemMsgEl);
+      chatDisplay.scrollTop = chatDisplay.scrollHeight;
+    }
+  }
+  
+  // Parsear mensajes de chat desde texto plano
+  if (type === 'info' && message.includes(':') && !message.includes('Iniciando bot para el canal:')) {
     const systemPatterns = [
-      /^(Conectando|Conectado|═|║|╔|╚|Leyendo|Deteniendo|Bot|Hora|Modo|📊|🤖|🕐|\[DEBUG\]|\[IA\]|\[MEMORIA\]|\[TTS\]|\[AUDIO\]|\[CMD\])/,  // Prefijos de sistema
-      /Archivo temporal creado/,  // Mensajes de archivos
-      /Intentando reproducir/,  // Mensajes de reproducción
-      /Dispositivo actualizado/,  // Mensajes de dispositivo
-      /Configuracion/,  // Mensajes de configuración
-      /Audio cargado/,  // Mensajes de audio
-      /Dispositivo seleccionado/,  // Mensajes de dispositivo
-      /Cargando audio/,  // Mensajes de carga
-      /Audio reproducido/  // Mensajes de reproducción
+      /^(Conectando|═|║|╔|╚|Leyendo|Deteniendo|Hora|Modo|📊|🤖|🕐|\[DEBUG\]|\[IA\]|\[MEMORIA\]|\[TTS\]|\[AUDIO\]|Advertencia|Warning|Error|ERROR)/,
+      /^\[CMD\]\s+[^:]+$/,
+      /Archivo temporal|Intentando reproducir|Dispositivo actualizado|Configuracion|Audio cargado|Dispositivo seleccionado|Cargando audio|Audio reproducido/,
+      /^Usuario\s|^Modo de filtro/,
+      /^Canal:\s/,
     ];
     
-    // Verificar si es mensaje del sistema
-    const isSystemMessage = systemPatterns.some(pattern => pattern.test(message));
-    
+    const isSystemMessage = systemPatterns.some(pattern => pattern.test(message.trim()));
     if (!isSystemMessage) {
       parseChatMessage(message);
     }
@@ -839,37 +897,54 @@ function processBotOutput(data) {
 
 // Parsear mensajes de chat
 function parseChatMessage(text) {
-  // Patrón mejorado para detectar mensajes de chat
-  // Formato: [badges] (color) username: message
-  // También maneja: 🤖 [badges] username: message
-  const chatPattern = /^(?:🤖\s*)?(?:⭐\s*)?(?:\[([^\]]+)\]\s*)?(?:\(([^)]+)\)\s*)?([^:]+):\s*(.+)$/;
-  const match = text.match(chatPattern);
-
+  const trimmedText = text.trim();
+  
+  const systemWords = ['Canal:', 'Iniciando bot', 'Bot conectado', 'Autenticado', 'Sistema', 'Error', 'Advertencia', 'Bot Avanzado'];
+  if (systemWords.some(word => trimmedText.startsWith(word))) {
+    return;
+  }
+  
+  // Patrón: [CMD] [DESTACADO] [badges] (#color o ##color) username: message
+  const mainPattern = /^(?:\[CMD\]\s*)?(?:\[DESTACADO\]\s*)?(?:\[([^\]]+)\]\s*)?(?:\(#+#?([A-Fa-f0-9]{3,6})\)\s*)?([^\s:]+)\s*:\s+(.+)$/;
+  
+  const match = trimmedText.match(mainPattern);
+  
   if (match) {
-    const [, badges, color, username, message] = match;
-    
-    // Limpiar
-    const cleanUsername = username.trim();
-    const cleanMessage = message.trim();
+    const badges = match[1] || '';
+    const color = match[2] || '';
+    const username = match[3]?.trim() || '';
+    const message = match[4]?.trim() || '';
 
-    // Validación básica
-    if (!cleanUsername || cleanUsername.length > 50) {
+    if (!username || username.length < 2 || username.length > 50 || !message ||
+        systemWords.some(word => username.toLowerCase() === word.toLowerCase())) {
       return;
     }
 
-    // Actualizar estadísticas
     messageCount++;
-    if (cleanMessage.startsWith('!')) {
-      commandCount++;
-    }
-
-    updateStats();
-
-    // Determinar si es comando
-    const isCommand = cleanMessage.startsWith('!');
+    const isCommand = message.startsWith('!') || trimmedText.includes('[CMD]');
+    if (isCommand) commandCount++;
     
-    // Agregar mensaje al chat
-    addChatMessage(cleanUsername, cleanMessage, badges, color, isCommand);
+    updateStats();
+    addChatMessage(username, message, badges, color ? `#${color.toUpperCase()}` : '', isCommand);
+    return;
+  }
+  
+  // Fallback: formato simple sin prefijos
+  if (!trimmedText.includes('[') && !trimmedText.includes('(')) {
+    const simpleMatch = trimmedText.match(/^([^\s:]+)\s*:\s+(.+)$/);
+    if (simpleMatch) {
+      const username = simpleMatch[1].trim();
+      const message = simpleMatch[2].trim();
+      
+      if (username && username.length > 1 && username.length <= 50 && message &&
+          !systemWords.some(word => username.toLowerCase() === word.toLowerCase())) {
+        messageCount++;
+        const isCommand = message.startsWith('!');
+        if (isCommand) commandCount++;
+        updateStats();
+        addChatMessage(username, message, '', '', isCommand);
+      }
+    }
   }
 }
 
@@ -929,6 +1004,8 @@ function addChatMessage(username, message, badges = '', color = '', isCommand = 
     messageEl.appendChild(metaEl);
   }
 
+  if (!chatDisplay) return;
+  
   chatDisplay.appendChild(messageEl);
   chatDisplay.scrollTop = chatDisplay.scrollHeight;
 }

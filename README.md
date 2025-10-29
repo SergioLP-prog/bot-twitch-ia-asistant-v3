@@ -1,35 +1,82 @@
 # 🤖 Bot Avanzado de Twitch - Interfaz Electron
 
-Bot profesional de Twitch con interfaz gráfica moderna para monitorear chats en tiempo real.
+Bot profesional de Twitch con interfaz gráfica moderna para monitorear chats en tiempo real, con instalador completo para Windows.
 
 ---
 
 ## 🚀 Inicio Rápido
 
+### 📦 Opción 1: Instalador .exe (Recomendado para Usuarios)
+
+Si eres un usuario final y solo quieres usar el bot:
+
+1. **Descarga el instalador** `Bot Twitch IA Assistant Setup 1.0.0.exe`
+2. **Ejecuta el instalador** - Todo se configura automáticamente:
+   - ✅ Python embebido incluido
+   - ✅ Todas las dependencias se instalan automáticamente
+   - ✅ No necesitas instalar nada manualmente
+3. **Abre la aplicación** desde el menú de inicio o escritorio
+4. **Ingresa tu Token OAuth** (se agrega `oauth:` automáticamente)
+5. **¡Listo!** El bot está listo para usar
+
+**💡 Nota:** El instalador instala las dependencias de Python de forma silenciosa (sin ventanas CMD).
+
+---
+
+### 🔧 Opción 2: Desarrollo desde Código
+
+Si quieres desarrollar o modificar el bot:
+
 ```bash
 # 1. Instalar dependencias Python
-pip install twitchio google-genai
+pip install -r requirements.txt
 
-# 2. Configurar API Key de Gemini (opcional, para funcionalidad IA)
-# Edita twitch_chat_advanced_electron.py línea 89 con tu API Key
-
-# 3. Instalar dependencias Electron
+# 2. Instalar dependencias Electron
 cd electron_app
 npm install
 
-# 4. Iniciar aplicación
+# 3. Iniciar aplicación en modo desarrollo
 npm start
 ```
 
 **⚠️ IMPORTANTE:** Necesitas un **Token OAuth** para usar el bot → [Obtener aquí](https://twitchtokengenerator.com/)
 
-**🤖 NUEVO - IA Opcional:** Para usar el comando `!IA`, configura tu API Key de Gemini → [Obtener aquí](https://aistudio.google.com/app/apikey)
+**🤖 IA Opcional:** Para usar el comando `!IA`, configura tu API Key de Gemini en la pestaña de configuración → [Obtener aquí](https://aistudio.google.com/app/apikey)
+
+---
+
+## 🏗️ Construir el Instalador
+
+Si quieres generar tu propio instalador desde el código fuente:
+
+```bash
+cd electron_app
+npm run build:win
+```
+
+El instalador se generará en: `electron_app/dist/Bot Twitch IA Assistant Setup 1.0.0.exe`
+
+**📋 Requisitos previos:**
+- Node.js 16+ instalado
+- Todas las dependencias npm instaladas (`npm install`)
+- Python embebido incluido en `electron_app/python_embebido/`
+
+Ver `electron_app/INSTRUCCIONES_BUILD.md` para más detalles.
 
 ---
 
 ## 📋 Requisitos
 
-- **Python 3.7+** → [Descargar](https://www.python.org/)
+### Para Usuarios Finales (Instalador .exe):
+- ✅ **Windows 10/11** (64-bit)
+- ✅ **Token OAuth de Twitch** (obligatorio) → [Obtener aquí](https://twitchtokengenerator.com/)
+- ✅ **Canal debe estar EN VIVO** para recibir mensajes
+- ✅ **API Key de Gemini** (opcional, solo para IA) → [Obtener](https://aistudio.google.com/app/apikey)
+
+**📦 Todo lo demás está incluido** (Python y dependencias se instalan automáticamente)
+
+### Para Desarrolladores (Código Fuente):
+- **Python 3.12+** → [Descargar](https://www.python.org/)
 - **Node.js 16+** → [Descargar](https://nodejs.org/)
 - **Token OAuth de Twitch** (obligatorio)
 - **Canal debe estar EN VIVO** para recibir mensajes
@@ -49,7 +96,12 @@ npm start
 5. Autoriza con tu cuenta de Twitch
 6. **Copia el token** (formato: `oauth:xxxxxxxxxxxxx`)
 
-### Paso 2: Guardar Token
+### Paso 2: Usar Token en la Aplicación
+- ✅ **Simplificado:** Solo pega el token en el campo (puedes incluir o no el prefijo `oauth:`)
+- ✅ **Automático:** La aplicación agrega `oauth:` automáticamente si falta
+- 🔒 **Seguro:** El token se guarda localmente en tu equipo (nunca se envía a servidores externos)
+
+### Paso 3: Guardar Token
 🔒 **Guarda tu token en un lugar seguro** (nunca lo compartas públicamente)
 
 ---
@@ -100,20 +152,28 @@ npm start
 ```
 
 1. Ingresa el **nombre del canal** (ej: `auronplay`, `ibai`)
-2. Pega tu **Token OAuth** en el campo correspondiente
-3. Haz clic en **"Iniciar Bot"**
-4. ✅ ¡Verás los mensajes en tiempo real!
+2. Pega tu **Token OAuth** en el campo correspondiente (se agrega `oauth:` automáticamente)
+3. **(Opcional)** Configura tu API Key de Gemini en la pestaña de configuración
+4. Haz clic en **"Iniciar Bot"**
+5. ✅ ¡Verás los mensajes en tiempo real!
 
-### Terminal
+**💡 Atajos de teclado:**
+- `Ctrl + Shift + I` o `Ctrl + Shift + J`: Abrir/cerrar consola de desarrollador
+
+### Terminal (No recomendado - Usa la Interfaz Gráfica)
+
+Si necesitas ejecutar desde línea de comandos:
 
 ```bash
-python twitch_chat_advanced_electron.py CANAL oauth:TU_TOKEN
+python chatbot.py CANAL oauth:TU_TOKEN
 ```
 
 **Ejemplo:**
 ```bash
-python twitch_chat_advanced_electron.py auronplay oauth:xxxxxxxxxxxxxxxxxxxxx
+python chatbot.py auronplay oauth:xxxxxxxxxxxxxxxxxxxxx
 ```
+
+**⚠️ Nota:** El archivo se llama `chatbot.py`, no `twitch_chat_advanced_electron.py`
 
 ---
 
@@ -190,11 +250,18 @@ bot_ia_v3/
 │   ├── renderer.js            # Lógica del frontend
 │   ├── style.css              # Estilos
 │   ├── package.json           # Dependencias Node
-│   └── README.md              # Documentación técnica
-├── twitch_chat_advanced_electron.py  # Bot de Python
+│   ├── installer.nsh          # Script de instalador NSIS
+│   ├── python_embebido/       # Python embebido para el instalador
+│   ├── install-python-deps.bat      # Instalación manual de dependencias
+│   ├── install-deps-silent.bat      # Instalación silenciosa (usado por instalador)
+│   ├── build.bat              # Script para construir instalador
+│   ├── README.md              # Documentación técnica
+│   └── INSTRUCCIONES_BUILD.md # Instrucciones para construir instalador
+├── chatbot.py                 # Bot de Python (principal)
 ├── requirements.txt           # Dependencias Python
+├── INSTALADOR.md              # Documentación del instalador
 ├── README.md                  # Este archivo
-└── LICENSE                    # Licencia
+└── LICENSE                    # Licencia (si existe)
 ```
 
 ---
@@ -214,12 +281,17 @@ bot_ia_v3/
 
 ### ❌ "El token debe empezar con 'oauth:'"
 
-**Causa:** Formato de token incorrecto.
+**Causa:** Formato de token incorrecto (ya no debería ocurrir).
 
-**Solución:**
+**Solución Automática:**
+- La aplicación ahora agrega `oauth:` automáticamente si falta
+- Solo pega el token sin preocuparte del prefijo
+
+**Si tienes problemas:**
 ```
 ❌ Incorrecto: kchmfz0tyso8p0h5mc4gbgdswslj22
 ✅ Correcto:   oauth:kchmfz0tyso8p0h5mc4gbgdswslj22
+✅ También OK: kchmfz0tyso8p0h5mc4gbgdswslj22 (se agrega automáticamente)
 ```
 
 ---
@@ -249,16 +321,18 @@ bot_ia_v3/
 
 ---
 
-### ❌ "TwitchIO no está instalado"
+### ❌ "TwitchIO no está instalado" (Solo en desarrollo)
 
-**Causa:** Falta instalar la librería TwitchIO.
+**Causa:** Si usas el código fuente, falta instalar dependencias.
 
-**Solución:**
+**Solución para Desarrollo:**
 ```bash
-pip install twitchio
-# o
 pip install -r requirements.txt
 ```
+
+**Si usas el instalador .exe:**
+- Las dependencias se instalan automáticamente durante la instalación
+- Si hay problemas, ejecuta manualmente: `install-python-deps.bat` desde la carpeta de instalación
 
 ---
 
@@ -277,9 +351,12 @@ pip install -r requirements.txt
 
 ### ❌ La aplicación Electron no inicia
 
-**Causa:** Dependencias de Node no instaladas.
+**Si usas el instalador .exe:**
+- Verifica que la instalación se completó correctamente
+- Revisa los logs del instalador
+- Reinstala la aplicación si es necesario
 
-**Solución:**
+**Si desarrollas desde código:**
 ```bash
 cd electron_app
 npm install
@@ -292,6 +369,15 @@ npm start
 rm -rf node_modules package-lock.json
 npm install
 ```
+
+### ❌ Problemas con dependencias de Python en el instalador
+
+**Si algunas dependencias no se instalaron automáticamente:**
+
+1. Navega a la carpeta de instalación (ej: `C:\Users\TuUsuario\AppData\Local\Programs\Bot Twitch IA Assistant`)
+2. Ejecuta `install-python-deps.bat` como administrador
+3. Espera a que termine la instalación
+4. Reinicia la aplicación
 
 ---
 

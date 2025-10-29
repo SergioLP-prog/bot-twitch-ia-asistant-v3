@@ -42,23 +42,41 @@ except ImportError:
     gTTS = None
 
 try:
+    import tempfile
+    import requests
+except ImportError as e:
+    print(f"Advertencia: requests no esta instalado: {e}")
+    print("Instala con: pip install requests")
+    requests = None
+
+try:
     # Suprimir mensaje de bienvenida de pygame
     os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
     import pygame
-    import tempfile
-    import requests
+except ImportError as e:
+    print(f"Advertencia: pygame no esta instalado: {e}")
+    print("Instala con: pip install pygame")
+    pygame = None
+
+try:
     import sounddevice as sd
     import numpy as np
-    from pydub import AudioSegment
 except ImportError as e:
-    print("Advertencia: pygame, requests, sounddevice o pydub no esta instalado")
-    print("La funcionalidad de TTS no estara disponible")
-    print("Instala con: pip install pygame requests sounddevice pydub")
-    pygame = None
-    requests = None
+    print(f"Advertencia: sounddevice o numpy no esta instalado: {e}")
+    print("Instala con: pip install sounddevice numpy")
     sd = None
     np = None
+
+try:
+    from pydub import AudioSegment
+except ImportError as e:
+    print(f"Advertencia: pydub no esta instalado: {e}")
+    print("Instala con: pip install pydub")
     AudioSegment = None
+
+# Marcar TTS como deshabilitado si alguna dependencia crítica falta
+if pygame is None or requests is None:
+    print("La funcionalidad de TTS no estara disponible debido a dependencias faltantes")
 
 # Intentar importar soundfile como alternativa a pydub para MP3
 try:
@@ -820,7 +838,7 @@ class TwitchChatBotAdvanced(commands.Bot):
             
             # Llamar a la API de Gemini
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.0-flash-exp",
                 contents=[contexto, mensaje_completo]
             )
             
