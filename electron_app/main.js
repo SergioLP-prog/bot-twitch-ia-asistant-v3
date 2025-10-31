@@ -361,49 +361,125 @@ ipcMain.handle('list-voices', async (event, elevenlabsKey) => {
   const scriptPath = getChatbotPath();
   
   return new Promise((resolve, reject) => {
+    // Validar API key antes de intentar
+    if (!elevenlabsKey || elevenlabsKey.trim() === '') {
+      resolve({
+        error: true,
+        message: 'API Key de ElevenLabs no proporcionada',
+        voices: []
+      });
+      return;
+    }
+    
     const { spawn } = require('child_process');
     const args = [scriptPath, '--list-voices'];
     
-    // Agregar API key si se proporciona
-    if (elevenlabsKey && elevenlabsKey !== '') {
-      args.push('--elevenlabs-key', elevenlabsKey);
-    }
+    // Agregar API key
+    args.push('--elevenlabs-key', elevenlabsKey.trim());
     
     const pythonProcess = spawn(pythonCmd, args);
     
-    let output = '';
+    let stdout = '';
+    let stderr = '';
     
+    // Capturar stdout
     pythonProcess.stdout.on('data', (data) => {
-      output += data.toString();
+      stdout += data.toString();
     });
     
+    // Capturar stderr por separado
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    // Timeout de 30 segundos
+    const timeout = setTimeout(() => {
+      pythonProcess.kill();
+      resolve({
+        error: true,
+        message: 'Timeout: La operación tardó demasiado',
+        voices: []
+      });
+    }, 30000);
+    
     pythonProcess.on('close', (code) => {
-      if (code === 0) {
-        try {
-          // Buscar la linea que contiene el JSON válido (empieza con [ y termina con ])
-          const lines = output.split('\n');
+      clearTimeout(timeout);
+      
+      try {
+        // Buscar el JSON entre los marcadores especiales
+        const jsonMatch = stdout.match(/VOICES_JSON_START:(.+?):VOICES_JSON_END/);
+        
+        if (jsonMatch) {
+          const jsonData = JSON.parse(jsonMatch[1]);
+          
+          // Si es un objeto con error
+          if (jsonData.error) {
+            resolve({
+              error: true,
+              message: jsonData.message || 'Error desconocido',
+              code: jsonData.code,
+              voices: []
+            });
+          } 
+          // Si es un array de voces
+          else if (Array.isArray(jsonData)) {
+            resolve(jsonData);
+          }
+          // Formato inesperado
+          else {
+            resolve({
+              error: true,
+              message: 'Formato de respuesta inesperado',
+              voices: []
+            });
+          }
+        } else {
+          // Si no se encuentra el marcador, intentar parsear como antes (backward compatibility)
+          const lines = stdout.split('\n');
           const jsonLine = lines.find(line => {
             const trimmed = line.trim();
             return trimmed.startsWith('[') && trimmed.endsWith(']') && 
                    !trimmed.includes('[TTS]') && 
-                   !trimmed.includes('[AUDIO]') &&
-                   !trimmed.includes('pygame') &&
-                   !trimmed.includes('Hello from the pygame');
+                   !trimmed.includes('[AUDIO]');
           });
           
           if (jsonLine) {
             const voices = JSON.parse(jsonLine);
-            resolve(voices);
+            resolve(Array.isArray(voices) ? voices : []);
           } else {
-            resolve([]);
+            // Si hay stderr, incluirlo en el mensaje de error
+            const errorMsg = stderr.trim() ? 
+              `Error de Python: ${stderr.substring(0, 200)}` : 
+              'No se pudo obtener las voces de ElevenLabs';
+            
+            resolve({
+              error: true,
+              message: errorMsg,
+              voices: [],
+              exitCode: code
+            });
           }
-        } catch (e) {
-          console.error('Error parsing voices:', e);
-          resolve([]);
         }
-      } else {
-        resolve([]);
+      } catch (e) {
+        console.error('Error parsing voices:', e);
+        console.error('Stdout:', stdout.substring(0, 500));
+        console.error('Stderr:', stderr.substring(0, 500));
+        
+        resolve({
+          error: true,
+          message: `Error al parsear respuesta: ${e.message}`,
+          voices: []
+        });
       }
+    });
+    
+    pythonProcess.on('error', (error) => {
+      clearTimeout(timeout);
+      resolve({
+        error: true,
+        message: `Error al ejecutar Python: ${error.message}`,
+        voices: []
+      });
     });
   });
 });

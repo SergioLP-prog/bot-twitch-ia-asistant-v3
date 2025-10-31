@@ -242,10 +242,39 @@ async function loadVoices() {
     const config = savedConfig ? JSON.parse(savedConfig) : {};
     const elevenlabsKey = config.elevenlabsKey || '';
     
-    const voices = await window.electronAPI.listVoices(elevenlabsKey);
+    // Validar que hay API key antes de intentar cargar
+    if (!elevenlabsKey || elevenlabsKey.trim() === '') {
+      // No hay API key, usar voces predeterminadas
+      loadFallbackVoices('No hay API Key de ElevenLabs configurada');
+      return;
+    }
+    
+    // Mostrar indicador de carga
+    if (reloadVoicesBtn) {
+      reloadVoicesBtn.disabled = true;
+      reloadVoicesBtn.innerHTML = '⏳';
+    }
+    
+    const result = await window.electronAPI.listVoices(elevenlabsKey);
+    
+    // Restaurar botón
+    if (reloadVoicesBtn) {
+      reloadVoicesBtn.disabled = false;
+      reloadVoicesBtn.innerHTML = '🔄';
+    }
     
     // Limpiar opciones existentes
     voiceSelect.innerHTML = '';
+    
+    // Verificar si hay error en la respuesta
+    if (result && result.error) {
+      addSystemLog(`Error al cargar voces: ${result.message}`, 'error');
+      loadFallbackVoices(result.message);
+      return;
+    }
+    
+    // Verificar que result sea un array
+    const voices = Array.isArray(result) ? result : [];
     
     if (voices.length > 0) {
       // Agregar voces disponibles
@@ -287,51 +316,49 @@ async function loadVoices() {
         voiceSelect.appendChild(option);
       });
       
-      addSystemLog(`${voices.length} voces de ElevenLabs cargadas`, 'info');
+      addSystemLog(`✅ ${voices.length} voces de ElevenLabs cargadas correctamente`, 'success');
     } else {
-      // Fallback a voces básicas si no se pueden cargar
-      const fallbackVoices = [
-        { value: 'Xb7hH8MSUJpSbSDYk0k2', text: 'Alice (Femenina) - British' },
-        { value: 'EXAVITQu4vr4xnSDxMaL', text: 'Sarah (Femenina) - American' },
-        { value: 'cgSgspJ2msm6clMCkdW9', text: 'Jessica (Femenina) - American' },
-        { value: 'FGY2WhTYpPnrIDTdsKH5', text: 'Laura (Femenina) - American' },
-        { value: 'pFZP5JQG7iQjIQuC4Bku', text: 'Lily (Femenina) - British' },
-        { value: 'iP95p4xoKVk53GoZ742B', text: 'Chris (Masculina) - American' },
-        { value: 'onwK4e9ZLuTAKqWW03F9', text: 'Daniel (Masculina) - British' },
-        { value: 'CwhRBWXzGAHq8TQ4Fs17', text: 'Roger (Masculina) - American' }
-      ];
-      
-      fallbackVoices.forEach(voice => {
-        const option = document.createElement('option');
-        option.value = voice.value;
-        option.textContent = voice.text;
-        voiceSelect.appendChild(option);
-      });
-      
-      addSystemLog('Usando voces predeterminadas (API no disponible)', 'warning');
+      // Sin voces disponibles
+      loadFallbackVoices('No se encontraron voces disponibles');
     }
   } catch (error) {
-    console.log('Error al cargar voces:', error);
+    console.error('Error al cargar voces:', error);
     
-    // Fallback a voces básicas
-    const fallbackVoices = [
-      { value: '21m00Tcm4TlvDq8ikWAM', text: 'Rachel (Femenina) - American' },
-      { value: 'EXAVITQu4vr4xnSDxMaL', text: 'Bella (Femenina) - American' },
-      { value: 'MF3mGyEYCl7XYWbV9V6O', text: 'Elli (Femenina) - American' },
-      { value: 'TxGEqnHWrfWFTfGW9XjX', text: 'Josh (Masculina) - American' },
-      { value: 'VR6AewLTigWG4xSOukaG', text: 'Arnold (Masculina) - American' },
-      { value: 'pNInz6obpgDQGcFmaJgB', text: 'Adam (Masculina) - American' }
-    ];
+    // Restaurar botón en caso de error
+    if (reloadVoicesBtn) {
+      reloadVoicesBtn.disabled = false;
+      reloadVoicesBtn.innerHTML = '🔄';
+    }
     
-    fallbackVoices.forEach(voice => {
-      const option = document.createElement('option');
-      option.value = voice.value;
-      option.textContent = voice.text;
-      voiceSelect.appendChild(option);
-    });
-    
-    addSystemLog('Usando voces predeterminadas (Error al cargar)', 'warning');
+    loadFallbackVoices(`Error inesperado: ${error.message}`);
   }
+}
+
+// Función auxiliar para cargar voces de fallback
+function loadFallbackVoices(reason) {
+  // Limpiar opciones existentes
+  voiceSelect.innerHTML = '';
+  
+  // Voces predeterminadas más comunes
+  const fallbackVoices = [
+    { value: 'Xb7hH8MSUJpSbSDYk0k2', text: 'Alice (Femenina) - British' },
+    { value: 'EXAVITQu4vr4xnSDxMaL', text: 'Sarah (Femenina) - American' },
+    { value: 'cgSgspJ2msm6clMCkdW9', text: 'Jessica (Femenina) - American' },
+    { value: 'FGY2WhTYpPnrIDTdsKH5', text: 'Laura (Femenina) - American' },
+    { value: 'pFZP5JQG7iQjIQuC4Bku', text: 'Lily (Femenina) - British' },
+    { value: 'iP95p4xoKVk53GoZ742B', text: 'Chris (Masculina) - American' },
+    { value: 'onwK4e9ZLuTAKqWW03F9', text: 'Daniel (Masculina) - British' },
+    { value: 'CwhRBWXzGAHq8TQ4Fs17', text: 'Roger (Masculina) - American' }
+  ];
+  
+  fallbackVoices.forEach(voice => {
+    const option = document.createElement('option');
+    option.value = voice.value;
+    option.textContent = voice.text;
+    voiceSelect.appendChild(option);
+  });
+  
+  addSystemLog(`⚠️ Usando voces predeterminadas - ${reason}`, 'warning');
 }
 
 // Cambiar vistas
@@ -382,9 +409,7 @@ async function saveSettings() {
         volumeValue,
         config.iaCommand || undefined
       );
-      if (result.status === 'success') {
-        addSystemLog('Configuracion actualizada en tiempo real', 'success');
-      }
+      // La configuración se actualiza silenciosamente en tiempo real
     } catch (error) {
       console.log('Error al actualizar configuracion:', error);
     }

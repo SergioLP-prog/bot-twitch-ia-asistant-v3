@@ -33,13 +33,6 @@ except ImportError:
     print("Instala con: pip install google-genai")
     genai = None
 
-try:
-    from gtts import gTTS
-except ImportError:
-    print("Advertencia: gtts no esta instalado")
-    print("El fallback de TTS gratuito no estara disponible")
-    print("Instala con: pip install gtts")
-    gTTS = None
 
 try:
     import tempfile
@@ -310,9 +303,9 @@ class TwitchChatBotAdvanced(commands.Bot):
         # Caché de voces para evitar múltiples peticiones a la API
         self.voices_cache = {}
         
-        # Fallback de TTS cuando se agota la cuota de ElevenLabs
-        self.elevenlabs_quota_exceeded = False
-        self.using_google_tts_fallback = False
+        # Flag para controlar mensajes de cuota agotada (solo para evitar spam de mensajes)
+        self.last_quota_error_time = 0
+        self.last_429_error_time = 0
         
         # Sistema de memoria por usuario (se resetea al reiniciar el bot)
         self.user_memory: Dict[str, List[Dict[str, str]]] = {}
@@ -393,11 +386,21 @@ class TwitchChatBotAdvanced(commands.Bot):
     def update_ia_command(self, ia_command: str):
         """Actualiza el comando de IA en tiempo real"""
         try:
+            old_command = self.ia_command
+            
+            # Validar y normalizar el nuevo comando
             if ia_command and len(ia_command) <= 20:
-                self.ia_command = ia_command.strip()
-                print(f"[IA] Comando de IA actualizado a: '{self.ia_command}'", flush=True)
+                new_command = ia_command.strip()
+                
+                # Solo actualizar y mostrar mensaje si realmente cambió
+                if new_command != old_command:
+                    self.ia_command = new_command
+                    print(f"[IA] Comando de IA actualizado a: '{self.ia_command}'", flush=True)
+                # Si no cambió, no mostrar mensaje
             else:
-                print(f"[IA] ⚠️ Comando de IA inválido (máximo 20 caracteres): '{ia_command}'", flush=True)
+                # Solo mostrar error si el comando es diferente al actual
+                if ia_command != old_command:
+                    print(f"[IA] ⚠️ Comando de IA inválido (máximo 20 caracteres): '{ia_command}'", flush=True)
         except Exception as e:
             print(f"[IA] ❌ Error al actualizar comando de IA: {e}", flush=True)
     
@@ -455,27 +458,56 @@ class TwitchChatBotAdvanced(commands.Bot):
     
     def update_bot_personality(self, personality: str):
         """Actualiza la personalidad del bot en tiempo real"""
-        self.bot_personality = personality if personality else "Eres un asistente amigable y util que responde de forma clara y concisa."
-        print(f"[IA] Personalidad del bot actualizada", flush=True)
+        # Valor por defecto
+        default_personality = "Eres un asistente amigable y util que responde de forma clara y concisa."
+        
+        # Normalizar la nueva personalidad
+        if personality:
+            new_personality = personality.strip()
+        else:
+            new_personality = default_personality
+        
+        old_personality = self.bot_personality
+        
+        # Solo actualizar y mostrar mensaje si realmente cambió
+        if new_personality != old_personality:
+            self.bot_personality = new_personality
+            print(f"[IA] Personalidad del bot actualizada", flush=True)
+        # Si no cambió, no mostrar mensaje
     
     def update_elevenlabs_key(self, api_key: str):
         """Actualiza la API Key de ElevenLabs en tiempo real"""
-        self.elevenlabs_api_key = api_key if api_key else ""
-        self.elevenlabs_enabled = pygame is not None and requests is not None and self.elevenlabs_api_key and len(self.elevenlabs_api_key) > 0
-        
-        # Limpiar caché de voces al cambiar la key
-        self.voices_cache = {}
-        
-        # Resetear flags de cuota al cambiar API key
-        self.elevenlabs_quota_exceeded = False
-        self.using_google_tts_fallback = False
-        
-        if self.elevenlabs_enabled:
-            print(f"[TTS] API Key de ElevenLabs actualizada correctamente", flush=True)
-            print(f"[TTS] Servicio de TTS activado", flush=True)
+        # Normalizar la key: convertir None a string vacío y trim espacios
+        if api_key is None:
+            new_key = ""
         else:
-            print(f"[TTS] API Key de ElevenLabs eliminada", flush=True)
-            print(f"[TTS] Servicio de TTS desactivado", flush=True)
+            new_key = str(api_key).strip()
+        
+        old_key = self.elevenlabs_api_key
+        
+        # Solo actualizar si la key realmente cambió
+        key_changed = old_key != new_key
+        
+        if key_changed:
+            print(f"[TTS] 🔄 Cambiando API Key de ElevenLabs...", flush=True)
+            print(f"[TTS] Key anterior: {'***' + old_key[-4:] if len(old_key) > 4 else '****'} → Nueva key: {'***' + new_key[-4:] if len(new_key) > 4 else 'vacía'}", flush=True)
+            
+            self.elevenlabs_api_key = new_key
+            self.elevenlabs_enabled = pygame is not None and requests is not None and self.elevenlabs_api_key and len(self.elevenlabs_api_key) > 0
+            
+            # Limpiar caché de voces al cambiar la key
+            self.voices_cache = {}
+            
+            # Resetear timers de errores de cuota cuando cambia la API key
+            self.last_quota_error_time = 0
+            self.last_429_error_time = 0
+            
+            if self.elevenlabs_enabled:
+                print(f"[TTS] ✅ API Key de ElevenLabs actualizada correctamente", flush=True)
+                print(f"[TTS] Servicio de TTS activado", flush=True)
+            else:
+                print(f"[TTS] API Key de ElevenLabs eliminada", flush=True)
+                print(f"[TTS] Servicio de TTS desactivado", flush=True)
     
     def get_available_voices(self):
         """Obtiene la lista de voces disponibles de ElevenLabs"""
@@ -571,11 +603,6 @@ class TwitchChatBotAdvanced(commands.Bot):
         print("Bot Avanzado de Twitch - Conectado", flush=True)
         print(f"Canal: {self.channel_name}", flush=True)
         print("[MEMORIA] Sistema de memoria de usuario activado (se resetea al reiniciar)", flush=True)
-        
-        # Mostrar info de TTS fallback
-        if self.elevenlabs_enabled:
-            if gTTS is None:
-                print("[TTS] Fallback no disponible. Instala gtts para tener respaldo automático: pip install gtts", flush=True)
         
         print(flush=True)
         
@@ -774,11 +801,17 @@ class TwitchChatBotAdvanced(commands.Bot):
         if username not in self.user_memory or not self.user_memory[username]:
             return ""
         
-        # Construir contexto de memoria
-        memory_text = "\n\nHistorial de conversación con este usuario:\n"
-        for interaction in self.user_memory[username]:
-            memory_text += f"Usuario: {interaction['question']}\n"
-            memory_text += f"Tu respuesta: {interaction['answer']}\n"
+        # Construir contexto de memoria con los últimos mensajes
+        memory_interactions = self.user_memory[username]
+        num_interactions = len(memory_interactions)
+        
+        memory_text = f"\n\nHistorial de conversación previa con {username} (últimas {num_interactions} interacciones):\n"
+        memory_text += "---\n"
+        
+        for interaction in memory_interactions:
+            memory_text += f"{username} dijo: {interaction['question']}\n"
+            memory_text += f"Tú respondiste: {interaction['answer']}\n"
+            memory_text += "---\n"
         
         return memory_text
     
@@ -830,19 +863,25 @@ class TwitchChatBotAdvanced(commands.Bot):
             # Obtener memoria del usuario si existe
             memory_context = self._get_user_memory_context(username)
             
-            # Mensaje completo con contexto y memoria
-            mensaje_completo = f"{username}: {content}"
+            # Construir el mensaje actual con el nombre del usuario claramente identificado
+            mensaje_actual = f"{username} dice: {content}"
+            
+            # Construir el prompt completo
             if memory_context:
-                mensaje_completo = memory_context + "\n\n" + mensaje_completo
-                print(f"[MEMORIA] Usando contexto de memoria para {username}", flush=True)
+                # Si hay memoria, incluirla antes del mensaje actual
+                prompt_completo = contexto + memory_context + f"\n\nAhora {mensaje_actual}\n\nResponde a {username}:"
+                print(f"[MEMORIA] Usando contexto de memoria para {username} ({len(self.user_memory[username])} interacciones previas)", flush=True)
+            else:
+                # Si no hay memoria, usar solo el mensaje actual
+                prompt_completo = contexto + f"\n\n{mensaje_actual}\n\nResponde a {username}:"
             
             # Llamar a la API de Gemini
             response = client.models.generate_content(
                 model="gemini-2.0-flash-exp",
-                contents=[contexto, mensaje_completo]
+                contents=[prompt_completo]
             )
             
-            # Guardar la interacción en la memoria
+            # Guardar la interacción en la memoria ANTES de retornar
             self._save_to_memory(username, content, response.text)
             
             return response.text
@@ -872,99 +911,8 @@ class TwitchChatBotAdvanced(commands.Bot):
                 print(f"[IA] Error de conexión con Gemini API: {error_str}", flush=True)
                 return f"Error de conexión: {error_str}"
     
-    async def _google_tts_fallback(self, text: str):
-        """TTS de fallback usando Google TTS gratuito cuando se agota la cuota de ElevenLabs"""
-        if gTTS is None:
-            print("[TTS FALLBACK] gTTS no disponible. Instala: pip install gtts", flush=True)
-            return
-        
-        try:
-            # Limpiar texto (remover emojis y caracteres especiales)
-            import re
-            clean_text = re.sub(r'[^\w\s\.,;:¿?¡!áéíóúñÁÉÍÓÚÑ]', '', text)
-            
-            # Limitar longitud
-            if len(clean_text) > 200:
-                clean_text = clean_text[:200]
-            
-            # Remover espacios extras
-            clean_text = ' '.join(clean_text.split())
-            
-            if not clean_text.strip():
-                print("[TTS FALLBACK] Texto vacío después de limpieza", flush=True)
-                return
-            
-            print(f"[TTS FALLBACK] Usando Google TTS gratuito: '{clean_text[:50]}...'", flush=True)
-            
-            # Generar audio con Google TTS
-            tts = gTTS(text=clean_text, lang='es', slow=False)
-            
-            # Guardar en archivo temporal
-            temp_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
-            tts.save(temp_path)
-            
-            # Usar la función centralizada para reproducir audio
-            if _sounddevice_available:
-                success = _play_audio_on_device(temp_path, device_id=self.audio_device_id, volume=self.volume)
-                if success:
-                    print("[TTS FALLBACK] ✅ Audio reproducido con Google TTS usando sounddevice", flush=True)
-                else:
-                    # Fallback a pygame
-                    print("[TTS FALLBACK] Usando pygame como fallback", flush=True)
-                    if pygame is None:
-                        print("[TTS FALLBACK] Pygame no disponible", flush=True)
-                        return
-                    
-                    if not pygame.mixer.get_init():
-                        pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
-                    
-                    pygame.mixer.music.load(temp_path)
-                    pygame.mixer.music.play()
-                    
-                    while pygame.mixer.music.get_busy():
-                        await asyncio.sleep(0.1)
-                    
-                    pygame.mixer.music.unload()
-                    print("[TTS FALLBACK] ✅ Audio reproducido con Google TTS", flush=True)
-            else:
-                # Usar pygame si sounddevice no está disponible
-                if pygame is None:
-                    print("[TTS FALLBACK] Pygame no disponible", flush=True)
-                    return
-                
-                if not pygame.mixer.get_init():
-                    pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
-                
-                pygame.mixer.music.load(temp_path)
-                pygame.mixer.music.play()
-                
-                while pygame.mixer.music.get_busy():
-                    await asyncio.sleep(0.1)
-                
-                pygame.mixer.music.unload()
-                print("[TTS FALLBACK] ✅ Audio reproducido con Google TTS", flush=True)
-            
-            # Limpiar archivo temporal
-            try:
-                await asyncio.sleep(0.2)
-                os.unlink(temp_path)
-            except Exception as cleanup_error:
-                # Ignorar errores de limpieza
-                pass
-                
-        except Exception as e:
-            print(f"[TTS FALLBACK] Error: {e}", flush=True)
-    
     async def text_to_speech(self, text: str):
-        """Convierte texto a voz usando ElevenLabs con fallback automático a Google TTS"""
-        
-        # Si ya sabemos que la cuota se agotó, usar fallback directamente
-        if self.elevenlabs_quota_exceeded:
-            if not self.using_google_tts_fallback:
-                print("⚠️ [TTS] Usando Google TTS gratuito (cuota de ElevenLabs agotada)", flush=True)
-                self.using_google_tts_fallback = True
-            await self._google_tts_fallback(text)
-            return
+        """Convierte texto a voz usando ElevenLabs"""
         
         if not self.elevenlabs_enabled:
             print("[TTS] ElevenLabs no esta configurado. Configura tu API Key en el apartado de Configuracion de la interfaz", flush=True)
@@ -999,32 +947,47 @@ class TwitchChatBotAdvanced(commands.Bot):
                     # Cuota agotada o API key inválida
                     response_data = response.json() if response.text else {}
                     error_detail = response_data.get('detail', {})
+                    error_text = response.text.lower() if response.text else ""
                     
-                    if 'quota' in str(error_detail).lower() or 'character' in str(error_detail).lower():
-                        print("🔴 [TTS] ¡CUOTA DE ELEVENLABS AGOTADA!", flush=True)
-                        print("🔴 [TTS] Has alcanzado el límite de caracteres de tu plan", flush=True)
-                        print("🔴 [TTS] Cambiando automáticamente a Google TTS gratuito...", flush=True)
-                        print("💡 [TTS] La cuota se resetea mensualmente", flush=True)
-                        print("💡 [TTS] Ver plan en: https://elevenlabs.io/app/subscription", flush=True)
-                        
-                        # Marcar que la cuota se agotó
-                        self.elevenlabs_quota_exceeded = True
-                        
-                        # Usar fallback
-                        await self._google_tts_fallback(text)
+                    # Solo marcar como cuota agotada si el error específicamente menciona quota o character limit
+                    is_quota_error = (
+                        'quota' in str(error_detail).lower() or 
+                        'character' in str(error_detail).lower() or
+                        'quota' in error_text or
+                        'character limit' in error_text or
+                        'subscription' in error_text
+                    )
+                    
+                    if is_quota_error:
+                        # Controlar frecuencia de mensajes (evitar spam)
+                        import time
+                        current_time = time.time()
+                        if current_time - self.last_quota_error_time > 60:  # Mostrar mensaje máximo cada 60 segundos
+                            print("🔴 [TTS] ¡CUOTA DE ELEVENLABS AGOTADA!", flush=True)
+                            print(f"🔴 [TTS] Has alcanzado el límite de caracteres de tu plan (Key: ...{self.elevenlabs_api_key[-4:] if len(self.elevenlabs_api_key) > 4 else '****'})", flush=True)
+                            print("💡 [TTS] La cuota se resetea mensualmente", flush=True)
+                            print("💡 [TTS] Ver plan en: https://elevenlabs.io/app/subscription", flush=True)
+                            self.last_quota_error_time = current_time
+                        return
+                    else:
+                        # Error 401 pero no es de cuota (API key inválida o expirada)
+                        print(f"⚠️ [TTS] Error de autenticación (401): La API Key puede ser inválida o haber expirado", flush=True)
+                        print(f"[TTS] Verifica tu API Key en: https://elevenlabs.io/app/settings/api-keys", flush=True)
+                        print(f"[TTS] Respuesta del servidor: {response.text[:200] if response.text else 'Sin detalles'}", flush=True)
                         return
                 
                 elif response.status_code == 429:
-                    # Too many requests
-                    print("⚠️ [TTS] Demasiadas requests a ElevenLabs. Cambiando a Google TTS...", flush=True)
-                    self.elevenlabs_quota_exceeded = True
-                    await self._google_tts_fallback(text)
+                    # Too many requests - controlar frecuencia de mensajes
+                    import time
+                    current_time = time.time()
+                    if current_time - self.last_429_error_time > 30:  # Mostrar mensaje máximo cada 30 segundos
+                        print("⚠️ [TTS] Demasiadas requests a ElevenLabs (Rate Limit)", flush=True)
+                        print("💡 [TTS] Espera unos segundos antes de intentar nuevamente", flush=True)
+                        self.last_429_error_time = current_time
                     return
                 
                 # Otros errores
                 print(f"[TTS] Error de API ElevenLabs: {response.status_code} - {response.text}", flush=True)
-                print("[TTS] Intentando con Google TTS gratuito como fallback...", flush=True)
-                await self._google_tts_fallback(text)
                 return
             
             # Guardar audio en archivo temporal
@@ -1037,14 +1000,15 @@ class TwitchChatBotAdvanced(commands.Bot):
             # Verificar que el archivo existe después de crearlo
             if not os.path.exists(temp_path):
                 print(f"[TTS] ❌ Error: Archivo temporal no se creó correctamente en: {temp_path}", flush=True)
-                await self._google_tts_fallback(text)
                 return
             
             # Verificar que el archivo no está vacío
             if os.path.getsize(temp_path) == 0:
                 print(f"[TTS] ❌ Error: Archivo temporal está vacío", flush=True)
-                os.unlink(temp_path)
-                await self._google_tts_fallback(text)
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
                 return
             
             # Reproducir audio
@@ -1058,12 +1022,6 @@ class TwitchChatBotAdvanced(commands.Bot):
                     
                     if success:
                         print(f"[TTS] ✅ Audio reproducido correctamente en dispositivo específico", flush=True)
-                        
-                        # Si se reprodujo exitosamente, resetear flag de cuota (por si se había agotado antes)
-                        if self.elevenlabs_quota_exceeded:
-                            self.elevenlabs_quota_exceeded = False
-                            self.using_google_tts_fallback = False
-                            print("[TTS] ✅ Cuota de ElevenLabs restaurada, volviendo a usar voces premium", flush=True)
                         
                         # Limpiar archivo temporal
                         try:
@@ -1081,12 +1039,6 @@ class TwitchChatBotAdvanced(commands.Bot):
                     
                     if success:
                         print(f"[TTS] ✅ Audio reproducido correctamente", flush=True)
-                        
-                        # Si se reprodujo exitosamente, resetear flag de cuota
-                        if self.elevenlabs_quota_exceeded:
-                            self.elevenlabs_quota_exceeded = False
-                            self.using_google_tts_fallback = False
-                            print("[TTS] ✅ Cuota de ElevenLabs restaurada, volviendo a usar voces premium", flush=True)
                         
                         # Limpiar archivo temporal
                         try:
@@ -1116,12 +1068,6 @@ class TwitchChatBotAdvanced(commands.Bot):
             
             print(f"[TTS] ✅ Audio reproducido correctamente", flush=True)
             
-            # Si se reprodujo exitosamente, resetear flag de cuota (por si se había agotado antes)
-            if self.elevenlabs_quota_exceeded:
-                self.elevenlabs_quota_exceeded = False
-                self.using_google_tts_fallback = False
-                print("[TTS] ✅ Cuota de ElevenLabs restaurada, volviendo a usar voces premium", flush=True)
-            
             # Limpiar archivo temporal
             try:
                 os.unlink(temp_path)
@@ -1130,9 +1076,8 @@ class TwitchChatBotAdvanced(commands.Bot):
             
         except Exception as e:
             print(f"[TTS] Error al reproducir audio: {e}", flush=True)
-            # En caso de error inesperado, intentar fallback
-            print("[TTS] Intentando fallback a Google TTS...", flush=True)
-            await self._google_tts_fallback(text)
+            import traceback
+            traceback.print_exc()
     
     def get_statistics(self) -> Dict[str, Any]:
         """Obtiene estadísticas del chat"""
@@ -1375,13 +1320,100 @@ def main():
                 break
             i += 1
         
-        # Crear bot temporal con token válido y API key para listar voces
-        bot_temp = TwitchChatBotAdvanced("temp", "oauth:temp123456789012345", "", elevenlabs_key_for_list)
-        voices = bot_temp.get_available_voices()
+        # Validar que se proporcionó una API key
+        if not elevenlabs_key_for_list or len(elevenlabs_key_for_list) == 0:
+            import json
+            error_response = {
+                'error': True,
+                'message': 'API Key de ElevenLabs no proporcionada',
+                'voices': []
+            }
+            print(f"VOICES_JSON_START:{json.dumps(error_response)}:VOICES_JSON_END", flush=True)
+            sys.exit(1)
         
+        # Función independiente para listar voces sin crear bot completo
+        def list_elevenlabs_voices(api_key):
+            """Lista voces de ElevenLabs directamente sin crear un bot completo"""
+            try:
+                url = "https://api.elevenlabs.io/v1/voices"
+                headers = {
+                    "Accept": "application/json",
+                    "xi-api-key": api_key
+                }
+                
+                response = requests.get(url, headers=headers, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    voices = []
+                    
+                    for voice in data.get('voices', []):
+                        voice_info = {
+                            'voice_id': voice.get('voice_id', ''),
+                            'name': voice.get('name', 'Sin nombre'),
+                            'category': voice.get('category', 'Unknown'),
+                            'description': voice.get('description', ''),
+                            'labels': voice.get('labels', {})
+                        }
+                        voices.append(voice_info)
+                    
+                    # Ordenar voces por nombre
+                    voices.sort(key=lambda x: x['name'].lower())
+                    return voices
+                    
+                elif response.status_code == 401:
+                    return {
+                        'error': True,
+                        'message': 'API Key inválida o sin permisos',
+                        'code': 401
+                    }
+                elif response.status_code == 429:
+                    return {
+                        'error': True,
+                        'message': 'Demasiadas solicitudes (Rate Limit)',
+                        'code': 429
+                    }
+                else:
+                    return {
+                        'error': True,
+                        'message': f'Error de API: {response.status_code}',
+                        'code': response.status_code
+                    }
+                    
+            except requests.exceptions.Timeout:
+                return {
+                    'error': True,
+                    'message': 'Timeout: La conexión con ElevenLabs tardó demasiado',
+                    'code': 'timeout'
+                }
+            except requests.exceptions.ConnectionError:
+                return {
+                    'error': True,
+                    'message': 'Error de conexión: No se pudo conectar con ElevenLabs',
+                    'code': 'connection_error'
+                }
+            except Exception as e:
+                return {
+                    'error': True,
+                    'message': f'Error inesperado: {str(e)}',
+                    'code': 'unknown'
+                }
+        
+        # Listar voces
+        result = list_elevenlabs_voices(elevenlabs_key_for_list)
+        
+        # Formatear respuesta
         import json
-        print(json.dumps(voices), flush=True)
-        return
+        if isinstance(result, dict) and result.get('error'):
+            # Si es un error, retornar como JSON con error
+            response_json = json.dumps(result)
+        else:
+            # Si es éxito, retornar array de voces
+            response_json = json.dumps(result if isinstance(result, list) else [])
+        
+        # Usar marcadores especiales para facilitar el parsing
+        print(f"VOICES_JSON_START:{response_json}:VOICES_JSON_END", flush=True)
+        sys.exit(0 if isinstance(result, list) else 1)
     
     # Verificar argumentos
     voice_id = "21m00Tcm4TlvDq8ikWAM"  # Voz por defecto
