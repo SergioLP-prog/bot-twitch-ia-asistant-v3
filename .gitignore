@@ -36,6 +36,10 @@ __pycache__/
 venv/
 env/
 
+# Python embebido con dependencias (no subir a git)
+electron_app/python_embebido/Lib/site-packages/
+elevenlabs_voices.json
+
 # Configuración local (tokens, etc)
 config.json
 .config.json

@@ -877,7 +877,7 @@ class TwitchChatBotAdvanced(commands.Bot):
             
             # Llamar a la API de Gemini
             response = client.models.generate_content(
-                model="gemini-2.0-flash-exp",
+                model="gemini-2.5-pro",
                 contents=[prompt_completo]
             )
             
